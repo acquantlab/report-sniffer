@@ -151,7 +151,8 @@ In untagged PDF/HTML the figures are the ones printed on the page:
   every slide citing the printed pages and the source; *Figures (Excel)* — statements as numbers with unit and page, changes
   and free cash flow as formulas, ratios, checks, every figure read (prices and returns for market sheets).
   The PDF is drawn on white, with the accent colour of the chosen theme, by the local server
-  in a fraction of a second (no browser involved). No pages of raw figures: it holds
+  in a fraction of a second (no browser involved). Names and texts in Latin, Greek, Cyrillic, Chinese, Japanese and
+  Korean script are printed as they are (the fonts are embedded). No pages of raw figures: it holds
   - the summary card, the AI's summary and the key findings;
   - **financial highlights**: income statement, balance sheet and cash flows with the two periods compared, the change
     and the page of each line;
@@ -256,6 +257,8 @@ The server listens on `127.0.0.1` only. Documents and responses are cached in `.
   be checked. Checked on 44 real SEC filings and earnings releases (FinanceBench) and 21 ESEF reports. A diluted EPS row labelled only by a section header above it ("Earnings per share — diluted:")
   is often left to the AI.
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
+- The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
+  Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
 - Yahoo Finance has no official API. It rejects clients that do not look like a browser (HTTP 429), so the app
   talks to it through `curl_cffi`, which presents itself as Chrome, with a session cookie and both hosts. For crypto
   pairs (BTC-USD, ETH-EUR, …) the price history falls back to Coinbase's public API if Yahoo is still unavailable;
@@ -271,6 +274,7 @@ Start Report Sniffer.command  macOS/Linux double-click wrapper
 Start Report Sniffer.bat      Windows double-click wrapper
 server.py                     FastAPI server (localhost only)
 analyst/                      sources, iXBRL parser, tables, financials, statements, market sheet, PDF/HTML, AI providers and reader, PDF report, charts and themes, i18n
+analyst/fonts/                fonts embedded in the PDF report, with their licenses
 web/                          interface, sniffer animation, live report
 tests/                        offline tests on synthetic documents and simulated APIs
 ```
@@ -288,3 +292,6 @@ responses; they need no network.
 ## License
 
 [MIT](LICENSE) © 2026 AC Quant Lab. Report Sniffer is not financial advice.
+
+The fonts in `analyst/fonts/` keep their own licenses: Liberation Sans and Nanum Gothic under the SIL Open Font
+License 1.1, Droid Sans Fallback under the Apache License 2.0 (see [analyst/fonts/README.md](analyst/fonts/README.md)).

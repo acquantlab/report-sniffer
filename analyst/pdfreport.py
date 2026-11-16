@@ -11,7 +11,6 @@ from __future__ import annotations
 import io
 import threading
 from datetime import date
-from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
@@ -21,7 +20,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import (CondPageBreak, Flowable, ListFlowable, ListItem, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
-from . import charts
+from . import charts, typefaces
 from .i18n import t, using
 
 INK, MUTED, LINE, PINK, BLUE, CYAN, UP, DOWN = (colors.HexColor(c) for c in
@@ -30,14 +29,17 @@ ZEBRA = colors.HexColor("#f6f6f4")
 ACCENT_HEX = "#c96a00"
 LABELS: dict = {}                      # page number -> page number as printed, for the report being built
 _LOCK = threading.Lock()
-SERIF, SERIF_B, SANS, SANS_B = "Helvetica", "Helvetica-Bold", "Helvetica", "Helvetica-Bold"     # one family: a research note, not a magazine
+# one family: a research note, not a magazine. Liberation Sans (Helvetica's metrics, plus Greek and Cyrillic) with
+# fallbacks for Chinese, Japanese and Korean: see typefaces.py
+SERIF, SERIF_B, SANS, SANS_B = typefaces.SANS, typefaces.SANS_B, typefaces.SANS, typefaces.SANS_B
 
-# the standard PDF fonts cover Windows-1252 only
+# marks kept plain (✓ and ✗ are in none of the fonts)
 _SAFE = str.maketrans({"−": "-", "→": "->", "≈": "~", "✓": "", "✗": "", " ": " ", " ": " "})
 
 
 def _x(s) -> str:
-    return escape(str(s if s is not None else "").translate(_SAFE))
+    """Text for a Paragraph: escaped, with runs in other scripts set in a font that has them."""
+    return typefaces.markup(str(s if s is not None else "").translate(_SAFE))
 
 
 def _plist(pages) -> str:
@@ -127,6 +129,7 @@ def _mark(c, x, y):
 def build(a: dict, theme: str = "terminal") -> bytes:
     from . import themes
     lang = a.get("lang") or "en"
+    typefaces.register()
     with _LOCK, using(lang):              # colours and page labels are module state while one report is drawn
         themes.apply(theme)
         LABELS.clear()
@@ -249,9 +252,9 @@ def _build(a: dict, lang: str) -> bytes:
         later_pages(c, doc)
 
     def later_pages(c, doc):
-        c.setFont(SANS, 7.5)
         c.setFillColor(MUTED)
-        c.drawRightString(A4[0] - 14 * mm, 9 * mm, f"{_x(a.get('title', ''))}  ·  {doc.page}")
+        # plain text on the canvas (not paragraph markup: "AT&T" stays "AT&T")
+        typefaces.draw(c, A4[0] - 14 * mm, 9 * mm, f"{str(a.get('title') or '').translate(_SAFE)}  ·  {doc.page}", SANS, 7.5, "right")
 
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=24 * mm, bottomMargin=16 * mm,
                             title=f"{a.get('title', '')} — Report Sniffer", author="Report Sniffer")
