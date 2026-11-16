@@ -3,7 +3,8 @@
 *by AC Quant Lab*
 
 Report Sniffer reads financial documents (10-K, ESEF, PDFs, market data) and builds a live, cited report in a
-terminal-style interface. Runs locally on macOS, Windows and Linux in a Chromium browser. Open source and free.
+terminal-style interface. Runs locally on macOS, Windows and Linux in a Chromium browser. Free and open source under the
+[MIT license](LICENSE).
 
 ![The sniffer reading the income statement of Netflix's 2022 10-K while the report fills in](docs/screenshots/sniffer.gif)
 
@@ -271,3 +272,7 @@ tests/                        offline tests on synthetic documents and simulated
 
 The tests use synthetic documents (made-up companies and numbers) and simulated SEC, filings.xbrl.org and Yahoo
 responses; they need no network.
+
+## License
+
+[MIT](LICENSE) © 2026 AC Quant Lab. Report Sniffer is not financial advice.
