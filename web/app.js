@@ -1,84 +1,13 @@
 import { Sniffer, hero } from "./sniffer.js";
 import { THEMES, applyTheme, savedTheme, theme, themeId, rgba } from "./themes.js";
+import { LANGS, NATIVE, REPORT, UI } from "./i18n.js";
 
 applyTheme(savedTheme());
 
 // ------------------------------------------------------------------ interface language
-// English by default; Italian when the operating system is set to Italian (detected by the local server)
+// chosen in the page (a cookie the server reads), else the operating system's language when the app has it, else English
 
-const UI_LANG = document.documentElement.lang === "it" ? "it" : "en";
-const UI = {
-  en: {
-    lead: "A rolled banknote sniffs a financial document, figure by figure, and writes the report as it goes.",
-    warn: "This browser is not supported: Report Sniffer only works in Chromium-based browsers (Chrome, Brave, Edge, Arc). In Safari and Firefox the document is not read. Open <b>http://127.0.0.1:8765</b> in one of those browsers, or start Report Sniffer again from the terminal: it opens the right browser by itself.",
-    search_label: "Search for an instrument", search_ph: "Microsoft, Ferrari, BTC-USD, ^GSPC, EURUSD=X, gold…", search_btn: "Search",
-    url_label: "Or paste the address of a document (PDF, HTML, iXBRL)", read_btn: "Read", drop_aria: "Upload a file",
-    drop: "<b>Upload a document</b><br>Drop a PDF or HTML file here (statements, report, KID, in English or Italian) or <u>choose a file</u>",
-    opt_lang: "Report language", settings: "Settings", quit: "Quit", stopped: "Report Sniffer has stopped. You can close this tab; start the app again to reopen it.", back_search: "Back to search", theme: "Theme",
-    new_analysis: "‹ New analysis", play: "Play", pause: "Pause", replay: "Replay", restart: "Restart", download: "Download ▾", dl_pdf: "Report (PDF)", dl_pptx: "Slides (PowerPoint)", dl_xlsx: "Figures (Excel)",
-    ua_label: "Identity for SEC EDGAR (User-Agent)", ua_ph: "Jane Doe jane@example.com",
-    ua_help: "The SEC asks whoever downloads filings for a name and a contact. It stays on this computer.",
-    key_label: "API key", provider_label: "Provider", model_label: "Model (optional)", close: "Close", save_test: "Save and test",
-    setup_title: "Set up the AI", setup_intro: "Every document is read with an AI, so it is understood instead of only mined for figures. Choose how to connect one: it is needed once.",
-    ai_label: "AI that reads the documents", mode_sub: "A subscription I already have", mode_key: "An API key", sub_label: "Subscription",
-    sub_found: "Found on this computer. If you have not signed in yet, open a terminal, run the command below once and sign in.",
-    sub_missing: "Not found on this computer. Install it, sign in once, then press Save and test.",
-    sub_claude: "Claude Pro or Max: install Claude Code (claude.com/product/claude-code), run “claude” in a terminal and sign in with your Claude account. Usage counts toward your plan's limits.",
-    sub_codex: "ChatGPT Plus or Pro: install Codex (npm install -g @openai/codex), run “codex” in a terminal and choose “Sign in with ChatGPT”. Usage counts toward your plan's limits.",
-    model_default: "the tool's default", testing: "Testing the connection…", connected: (n) => `Connected: ${n}`,
-    ai_on: (n) => `AI: ${n}`, ai_off: "AI not set up", need_ai: "Set up the AI first.",
-    sec_noticker: (f) => `${f || "Filing"} · no ticker yet`,
-    error: (m) => `Something went wrong: ${m} — reload the page (Cmd+R / Ctrl+R). If it happens again, send this message.`,
-    searching: (q) => `Searching for “${q}” on SEC EDGAR, filings.xbrl.org and Yahoo Finance…`,
-    g_sec: "US filings", g_sec_src: "SEC EDGAR: the latest annual report, or the IPO prospectus; quarterly reports and results under «Other documents»", read_filing: "Analyse",
-    more_docs: "Other documents ▾", docs_loading: "Loading the list…", no_docs: "No other documents.", doc_period: (p) => `period ${p}`, doc_filed: (d) => `filed ${d}`,
-    coverage: "<b>What the search finds</b>: US companies on SEC EDGAR — annual (10-K, 20-F, 40-F) and quarterly (10-Q) reports, results releases (8-K), IPO prospectuses (S-1, F-1); annual reports of European listed companies (ESEF); prices of stocks, indices, currencies, commodities and crypto. <b>Not in the search</b>: Italian half-year reports and other non-ESEF documents, accounts of unlisted companies, fund KIDs and factsheets — upload the PDF or paste its address below.",
-    g_esef: "European annual report", g_esef_src: "ESEF from filings.xbrl.org", read_report: "Analyse",
-    g_market: "Markets", g_market_src: "Sheet generated from the Yahoo Finance price history",
-    orig: "Download original", orig_csv: "Download prices (CSV)", orig_busy: "Downloading…", orig_failed: "Download failed:",
-    orig_title: "The original document as published (SEC / ESEF)", orig_csv_title: "Daily price history as a CSV file",
-    no_results: "No results. Try the ticker (e.g. MSFT, RACE.MI, BTC-USD) or upload the document directly.",
-    uploading: (n) => `Uploading ${n}`, preparing: "Preparing the document", not_started: "The reading did not start",
-    recent: "Recently read", key_saved: "Key saved for this provider. Leave empty to keep it; type “remove” to delete it.",
-    key_info: "Billed by the provider to your account. Stored only on this computer.", remove_word: "remove",
-    relang: (l) => l === "en" ? "Preparing the English report" : "Preparing the Italian report",
-  },
-  it: {
-    lead: "Una banconota arrotolata sniffa un documento finanziario, cifra per cifra, e scrive il report mentre avanza.",
-    warn: "Questo browser non è supportato: Report Sniffer funziona solo con browser basati su Chromium (Chrome, Brave, Edge, Arc). Su Safari e Firefox il documento non viene letto. Apri <b>http://127.0.0.1:8765</b> in uno di quei browser, oppure avvia di nuovo Report Sniffer dal Terminale: lo apre da solo nel browser giusto.",
-    search_label: "Cerca uno strumento", search_ph: "Microsoft, Ferrari, BTC-USD, ^GSPC, EURUSD=X, oro…", search_btn: "Cerca",
-    url_label: "Oppure incolla l'indirizzo di un documento (PDF, HTML, iXBRL)", read_btn: "Leggi", drop_aria: "Carica un file",
-    drop: "<b>Carica un documento</b><br>Trascina qui un PDF o HTML (bilancio, report, KID, in italiano o in inglese) o <u>scegli un file</u>",
-    opt_lang: "Lingua del report", settings: "Impostazioni", quit: "Esci", stopped: "Report Sniffer è stato chiuso. Puoi chiudere questa scheda; avvia di nuovo l'app per riaprirlo.", back_search: "Torna alla ricerca", theme: "Tema",
-    new_analysis: "‹ Nuova analisi", play: "Avvia", pause: "Pausa", replay: "Rivedi", restart: "Ricomincia", download: "Scarica ▾", dl_pdf: "Report (PDF)", dl_pptx: "Slide (PowerPoint)", dl_xlsx: "Cifre (Excel)",
-    ua_label: "Identificazione per SEC EDGAR (User-Agent)", ua_ph: "Nome Cognome nome@esempio.it",
-    ua_help: "La SEC chiede a chi scarica i bilanci di indicare un nome e un contatto. Resta su questo computer.",
-    key_label: "Chiave API", provider_label: "Fornitore", model_label: "Modello (facoltativo)", close: "Chiudi", save_test: "Salva e prova",
-    setup_title: "Configura l'AI", setup_intro: "Ogni documento viene letto con un'AI, così viene capito invece di raccogliere solo cifre. Scegli come collegarne una: serve una volta sola.",
-    ai_label: "AI che legge i documenti", mode_sub: "Un abbonamento che ho già", mode_key: "Una chiave API", sub_label: "Abbonamento",
-    sub_found: "Trovato su questo computer. Se non hai ancora fatto l'accesso, apri un terminale, esegui una volta il comando qui sotto ed entra con il tuo account.",
-    sub_missing: "Non trovato su questo computer. Installalo, fai l'accesso una volta, poi premi Salva e prova.",
-    sub_claude: "Claude Pro o Max: installa Claude Code (claude.com/product/claude-code), esegui «claude» in un terminale ed entra con il tuo account Claude. L'uso conta nei limiti del tuo piano.",
-    sub_codex: "ChatGPT Plus o Pro: installa Codex (npm install -g @openai/codex), esegui «codex» in un terminale e scegli «Sign in with ChatGPT». L'uso conta nei limiti del tuo piano.",
-    model_default: "quello predefinito dello strumento", testing: "Provo la connessione…", connected: (n) => `Collegato: ${n}`,
-    ai_on: (n) => `AI: ${n}`, ai_off: "AI non configurata", need_ai: "Configura prima l'AI.",
-    sec_noticker: (f) => `${f || "Documento"} · ancora senza ticker`,
-    error: (m) => `Qualcosa non ha funzionato: ${m} — ricarica la pagina (Cmd+R / Ctrl+R). Se si ripete, manda questo messaggio.`,
-    searching: (q) => `Cerco «${q}» su SEC EDGAR, filings.xbrl.org e Yahoo Finance…`,
-    g_sec: "Documenti SEC (USA)", g_sec_src: "SEC EDGAR: l'ultimo bilancio annuale, o il prospetto di IPO; trimestrali e risultati in «Altri documenti»", read_filing: "Analizza",
-    more_docs: "Altri documenti ▾", docs_loading: "Carico l'elenco…", no_docs: "Nessun altro documento.", doc_period: (p) => `periodo ${p}`, doc_filed: (d) => `depositato ${d}`,
-    coverage: "<b>Cosa trova la ricerca</b>: società USA su SEC EDGAR — bilanci annuali (10-K, 20-F, 40-F) e trimestrali (10-Q), comunicati sui risultati (8-K), prospetti di IPO (S-1, F-1); relazioni annuali delle quotate europee (ESEF); prezzi di azioni, indici, valute, materie prime e crypto. <b>Non nella ricerca</b>: semestrali italiane e altri documenti non ESEF, bilanci di società non quotate, KID e factsheet dei fondi — carica il PDF o incolla il suo indirizzo qui sotto.",
-    g_esef: "Relazione annuale europea", g_esef_src: "ESEF da filings.xbrl.org", read_report: "Analizza",
-    g_market: "Mercati", g_market_src: "Scheda generata dallo storico prezzi Yahoo Finance",
-    orig: "Scarica originale", orig_csv: "Scarica prezzi (CSV)", orig_busy: "Scarico…", orig_failed: "Download non riuscito:",
-    orig_title: "Il documento originale così come pubblicato (SEC / ESEF)", orig_csv_title: "Storico prezzi giornaliero in un file CSV",
-    no_results: "Nessun risultato. Prova con il ticker (es. MSFT, RACE.MI, BTC-USD) o carica direttamente il documento.",
-    uploading: (n) => `Carico ${n}`, preparing: "Preparo il documento", not_started: "La lettura non è partita",
-    recent: "Letti di recente", key_saved: "Chiave salvata per questo fornitore. Lascia vuoto per non cambiarla; scrivi «rimuovi» per cancellarla.",
-    key_info: "Il fornitore addebita l'uso sul tuo account. Resta solo su questo computer.", remove_word: "rimuovi",
-    relang: (l) => l === "en" ? "Preparo il report in inglese" : "Preparo il report in italiano",
-  },
-};
+const UI_LANG = LANGS.includes(document.documentElement.lang) ? document.documentElement.lang : "en";
 const tr = (k, ...a) => { const v = UI[UI_LANG][k] ?? UI.en[k]; return typeof v === "function" ? v(...a) : v; };
 
 function applyUI() {
@@ -86,10 +15,19 @@ function applyUI() {
   for (const el of document.querySelectorAll("[data-i18n-html]")) el.innerHTML = tr(el.dataset.i18nHtml);
   for (const el of document.querySelectorAll("[data-i18n-ph]")) el.placeholder = tr(el.dataset.i18nPh);
   for (const el of document.querySelectorAll("[data-i18n-aria]")) el.setAttribute("aria-label", tr(el.dataset.i18nAria));
+  const options = LANGS.map((c) => `<option value="${c}">${NATIVE[c]}</option>`).join("");
+  for (const id of ["#opt-lang", "#lang2", "#opt-ui"]) document.querySelector(id).innerHTML = options;
   document.querySelector("#opt-lang").value = UI_LANG;          // the report follows the interface unless changed
+  document.querySelector("#opt-ui").value = UI_LANG;
   document.documentElement.classList.add("ui-ready");
 }
 applyUI();
+
+// the interface language: remembered for a year, read by the server (its messages follow it), then the page reloads
+document.querySelector("#opt-ui").addEventListener("change", (e) => {
+  document.cookie = `sniffer_ui=${encodeURIComponent(e.target.value)}; path=/; max-age=31536000; SameSite=Strict`;
+  location.reload();
+});
 
 // colour themes: swatches on the home page and in the reading bar
 function renderThemePick() {
@@ -404,28 +342,8 @@ $("#set-save").addEventListener("click", async () => {
 const iframe = $("#doc"), stage = $("#stage"), layer = $("#doc-layer");
 const marksCv = $("#marks"), liveCv = $("#sniffer");
 
-// Report wording in the two report languages (the interface itself stays Italian)
-const I18N = {
-  it: {
-    of: "di", read: "cifre lette", other: "Altre cifre lette", obs: "Osservazioni chiave", yoy: "sull'anno",
-    page: "Pagina", p: "p.", pp: "pp.", checks: "controlli superati su", foot_ai: "Testi di Claude; ogni numero citato è confrontato con il documento",
-    no_checks: "nessun controllo aritmetico possibile", was: "era",
-    foot_det: "Calcoli deterministici sulle cifre del documento", pages_some: (l, n) => `Pagine mostrate: ${l} di ${n} (quelle con i prospetti e le cifre principali)`,
-    pages_all: (n) => `Pagine lette: tutte (${n})`, report: "Report", source: "Fonte", made: "Generato da Report Sniffer il",
-    figures: "Cifre lette", value: "Valore", label: "Voce", controls: "Controlli aritmetici", ok: "superato", ko: "non superato",
-    print: "Per salvarlo in PDF: File → Stampa → Salva come PDF.", locale: "it-IT", understood: "Cosa ha capito l'AI", summary: "In sintesi",
-  },
-  en: {
-    of: "of", read: "figures read", other: "Other figures read", obs: "Key findings", yoy: "year on year",
-    page: "Page", p: "p.", pp: "pp.", checks: "checks passed out of", foot_ai: "Text by Claude; every number it cites is matched to the document",
-    no_checks: "no arithmetic check possible", was: "was",
-    foot_det: "Deterministic calculations on the document's figures", pages_some: (l, n) => `Pages shown: ${l} of ${n} (the statements and key figures)`,
-    pages_all: (n) => `Pages read: all (${n})`, report: "Report", source: "Source", made: "Generated by Report Sniffer on",
-    figures: "Figures read", value: "Value", label: "Item", controls: "Arithmetic checks", ok: "passed", ko: "failed",
-    print: "To save as PDF: File → Print → Save as PDF.", locale: "en-US", understood: "What the AI understood", summary: "In short",
-  },
-};
-const L = () => I18N[state.analysis?.lang] || I18N.it;
+// report wording in the language of the analysis (web/i18n.js)
+const L = () => REPORT[state.analysis?.lang] || REPORT.en;
 
 // pacing: base seconds per stop, compressed for long documents, never by skipping figures
 const BASE = { fig: 0.28, key: 0.7, head: 0.45, walk: 0.034, minHop: 0.12, maxHop: 1.4 };
@@ -456,7 +374,7 @@ $("#lang2").addEventListener("change", async () => {
   $("#opt-lang").value = lang;
   if (!a || a.lang === lang) return;
   state.director?.stop();
-  show("loading"); loadingReset(tr("relang", lang));
+  show("loading"); loadingReset(tr("relang", NATIVE[lang] || lang));
   try { const { job } = await postJSON("/api/relang", { id: a.id, lang }); await follow(job); } catch (err) { loadingError(err.message); }
 });
 
@@ -468,10 +386,8 @@ async function openAnalysis(id) {
   $("#lang2").value = a.lang || "it";
   $("#r-title").textContent = a.title;
   $("#r-sub").textContent = a.subtitle;
-  $("#r-of").textContent = T.of;
-  $("#r-read").textContent = T.read;
+  $("#r-counter").innerHTML = T.counter('<b id="r-n">0</b>', `<span id="r-m">${Object.keys(a.facts).length.toLocaleString(T.locale)}</span>`);
   $("#r-other-title").textContent = T.other;
-  $("#r-m").textContent = Object.keys(a.facts).length.toLocaleString(T.locale);
   const shown = a.pages.map((p) => p.n);
   $("#r-pages").textContent = a.total_pages > shown.length ? T.pages_some(shown.map(pageLabel).join(", "), a.total_pages) : T.pages_all(a.total_pages);
   $("#r-warn").textContent = (a.warnings || []).join(" ");
@@ -490,7 +406,7 @@ function pageLabel(n) {
 function fmtPages(pages) {
   if (!pages?.length) return "";
   const T = L();
-  return esc((pages.length > 1 ? T.pp + " " : T.p + " ") + pages.map(pageLabel).join(", "));      // goes into innerHTML
+  return esc(T.pg(pages.map(pageLabel).join(", "), pages.length > 1));      // goes into innerHTML
 }
 
 class Director {
@@ -741,7 +657,7 @@ class Director {
   enterPage(n) {
     this.page = n;
     const a = this.a, p = a.pages.find((x) => x.n === n), T = L();
-    $("#r-sec-title").textContent = `${p ? p.title : T.page + " " + pageLabel(n)} · ${T.p} ${pageLabel(n)}`;
+    $("#r-sec-title").textContent = `${p ? p.title : T.page + " " + pageLabel(n)} · ${T.pg(pageLabel(n))}`;
     const cols = a.cols[n] || [T.value];
     $("#r-table thead").innerHTML = `<tr><th></th>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>`;
     const rows = (a.rows[n] || []).filter((r) => r.cells.some((fid) => fid !== null && this.planned.has(String(fid))));
@@ -768,7 +684,7 @@ class Director {
     if (this.listed.has(k)) return;
     this.listed.add(k);
     const li = document.createElement("li");
-    li.innerHTML = `<span>${esc(s.fact.label)}${s.fact.period ? `<small>${esc(s.fact.period)}</small>` : ""}</span><b>${esc(s.fact.value_fmt)}</b><i>${L().p} ${esc(pageLabel(s.page))}</i>`;
+    li.innerHTML = `<span>${esc(s.fact.label)}${s.fact.period ? `<small>${esc(s.fact.period)}</small>` : ""}</span><b>${esc(s.fact.value_fmt)}</b><i>${esc(L().pg(pageLabel(s.page)))}</i>`;
     const list = $("#r-other-list");
     list.prepend(li);
     while (list.children.length > 400) list.lastChild.remove();
@@ -865,21 +781,25 @@ function showReading(a) {
 }
 
 function cardHTML(a, count) {
-  const T = L(), lang = a.lang || "it";
+  const T = L(), lang = a.lang || "en";
   const passed = (a.checks || []).filter((c) => c.ok).length;
   const tiles = (a.card || []).map((t) => {
-    const y = t.yoy_display ? `<div class="y ${t.yoy_display.startsWith("+") ? "up" : "down"}">${esc(t.yoy_display)} <span class="vs">${esc(t.vs ? "vs " + t.vs : T.yoy)}</span></div>`
-      : t.prev_display ? `<div class="was">${esc(T.was)} ${esc(t.prev_display)}${t.vs ? ` (${esc(t.vs)})` : ""}</div>` : "";
-    return `<div class="tile"><div class="l">${esc(lang === "en" && t.en ? t.en : t.it)}</div><div class="v">${esc(t.display)}</div>` +
+    const y = t.yoy_display ? `<div class="y ${t.yoy_display.startsWith("+") ? "up" : "down"}">${esc(t.yoy_display)} <span class="vs">${esc(t.vs ? T.vs(t.vs) : T.yoy)}</span></div>`
+      : t.prev_display ? `<div class="was">${esc(T.was(t.prev_display))}${t.vs ? ` (${esc(t.vs)})` : ""}</div>` : "";
+    // the label in the report language (analyses read by older versions carry only Italian and English)
+    const label = t.label || (lang === "en" && t.en ? t.en : t.it);
+    return `<div class="tile"><div class="l">${esc(label)}</div><div class="v">${esc(t.display)}</div>` +
       (t.exact ? `<div class="x">${esc(t.exact)}</div>` : "") + y + (t.note ? `<div class="nt">${esc(t.note)}</div>` : "") +
       `<span class="pg">${fmtPages(t.pages)}</span></div>`;
   }).join("");
   const nchk = (a.checks || []).length;
+  // the wording is ours (no markup in it); the numbers are wrapped in <b>
+  const counts = T.read(`<b>${count.toLocaleString(T.locale)}</b>`) + " · " + (nchk ? T.checks(`<b>${passed}</b>`, nchk) : esc(T.no_checks));
   return `<div class="card"><h2>${esc(a.title)}</h2><p class="sub">${esc(a.subtitle)}</p>
     <div class="tiles">${tiles}</div>
     <ul>${(a.card_findings || []).map((f) => `<li>${esc(f.text)} <span class="pg">${fmtPages(f.pages)}</span></li>`).join("")}</ul>
-    <div class="foot"><span><b>${count.toLocaleString(T.locale)}</b> ${esc(T.read)} · ${nchk ? `<b>${passed}</b> ${esc(T.checks)} ${nchk}` : esc(T.no_checks)}</span>
-    <span>${esc(a.ai ? T.foot_ai.replace("Claude", a.ai_provider || "AI") : T.foot_det)}</span></div></div>`;
+    <div class="foot"><span>${counts}</span>
+    <span>${esc(a.ai ? T.foot_ai(a.ai_provider || "AI") : T.foot_det)}</span></div></div>`;
 }
 
 // ------------------------------------------------------------------ downloadable report

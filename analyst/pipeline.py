@@ -57,8 +57,8 @@ def _humanize(concept: str) -> str:
 def view_html(pages: list[dict], css: str, flush: bool = False, labels: Optional[dict] = None) -> str:
     labels = labels or {}
     body = "".join(
-        f'<section class="sa-page{" flush" if flush else ""}" data-page="{p["n"]}"><div class="sa-pnum">{t("Pagina", "Page")} '
-        f'{html_escape(str(labels.get(p["n"]) or p["n"]))}</div>'
+        f'<section class="sa-page{" flush" if flush else ""}" data-page="{p["n"]}"><div class="sa-pnum">'
+        f'{html_escape(t("Pagina {n}", "Page {n}", n=labels.get(p["n"]) or p["n"]))}</div>'
         f'<div class="sa-pbody">{p["html"]}</div></section>' for p in pages)
     return (f'<!doctype html><html><head><meta charset="utf-8"><style>{BASE_CSS}\n{css}</style></head>'
             f'<body><main id="sa-doc">{body}</main></body></html>')

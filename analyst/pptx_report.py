@@ -279,7 +279,7 @@ class Deck:
             ("operating_income", t("Risultato operativo", "Operating income")), ("net_income", t("Risultato netto", "Net income")),
             ("cfo", t("Cassa operativa", "Operating cash flow"))) if val(k) is not None]
         if d["cur"].get("fcf") is not None:
-            items.append(("Free cash flow", d["cur"]["fcf"], d["prev"].get("fcf"), (m.get("cfo") or {}).get("page")))
+            items.append((t("Free cash flow", "Free cash flow"), d["cur"]["fcf"], d["prev"].get("fcf"), (m.get("cfo") or {}).get("page")))
         if len(items) < 2:
             return
         div, unit = _scale(max(abs(v) for _, c, p, _ in items for v in (c, p) if v is not None), cur)

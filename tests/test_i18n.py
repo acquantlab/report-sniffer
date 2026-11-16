@@ -2,7 +2,9 @@
 documents read and exported (PDF, PowerPoint, Excel) in each language use no text the catalog lacks."""
 import json
 import re
+import shutil
 import string
+import subprocess
 import sys
 from pathlib import Path
 
@@ -81,5 +83,20 @@ def test_interface_language_follows_the_page(monkeypatch):
 
 def test_web_interface_has_every_language():
     js = (HERE.parent / "web" / "i18n.js").read_text(encoding="utf-8")
+    assert re.search(r'LANGS = \[([^\]]+)\]', js).group(1).replace('"', "").replace(" ", "").split(",") == list(i18n.LANGS)
     for lang in i18n.LANGS:
-        assert re.search(rf"^  {lang}: \{{", js, re.M), lang
+        assert len(re.findall(rf"^  {lang}: \{{", js, re.M)) == 2, lang          # interface and report wording
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed: the keys of each language are not compared")
+    check = """
+      import { UI, REPORT, LANGS } from "%s";
+      const bad = [];
+      for (const [name, D] of [["UI", UI], ["REPORT", REPORT]])
+        for (const l of LANGS)
+          for (const k of Object.keys(D.en))
+            if (typeof D[l][k] !== typeof D.en[k]) bad.push(`${name}.${l}.${k}`);
+      console.log(JSON.stringify(bad));
+    """ % (HERE.parent / "web" / "i18n.js").as_uri()
+    out = subprocess.run([node, "--input-type=module", "-e", check], capture_output=True, text=True, check=True).stdout
+    assert json.loads(out) == []

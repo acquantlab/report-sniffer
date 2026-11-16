@@ -53,3 +53,40 @@ def test_layout_and_size_unchanged_for_latin_documents(analysis):
     assert b"DroidSansFallback" not in data and b"NanumGothic" not in data
     data = pdfreport.build(dict(analysis, title=NAMES["japanese"]))
     assert b"DroidSansFallback" in data and len(data) < 600_000           # a subset, not the 4 MB font
+
+
+def drawn_without_glyph(data: bytes) -> list[str]:
+    """Characters printed in a font that has no glyph for them (empty boxes). reportlab gives them no text mapping,
+    so the PDF's text layer has nothing there: pdfium reads them as empty strings."""
+    import ctypes
+    import pypdfium2.raw as R
+    bad = []
+    pdf = pdfium.PdfDocument(data)
+    buf = ctypes.create_string_buffer(256)
+    for i in range(len(pdf)):
+        tp = pdf[i].get_textpage()
+        for k in range(tp.count_chars()):
+            if tp.get_text_range(k, 1) == "":
+                R.FPDFText_GetFontInfo(tp.raw, k, buf, 256, None)
+                bad.append(f"page {i + 1}, char {k}, font {buf.value.decode(errors='replace')}")
+    return bad
+
+
+@pytest.mark.parametrize("lang", ["zh", "ja", "ru", "de", "fr"])
+def test_every_character_has_a_glyph(analysis, lang, tmp_path):
+    # the whole report written in each language, plus document names in other scripts: nothing printed as an empty box
+    mp = pytest.MonkeyPatch()
+    mp.setattr(pipeline, "DOCS", tmp_path)
+    mp.setattr(ai, "active", lambda: None)
+    import synth
+    from analyst import sources
+    mp.setattr(sources, "price_history", lambda s: synth.series())
+    try:
+        docs = [pipeline.run({"kind": "upload", "data": make_s1.s1().encode(), "name": "s1.htm", "lang": lang}, lambda *_: None),
+                pipeline.run({"kind": "market", "symbol": "TEST-USD", "lang": lang}, lambda *_: None)]
+    finally:
+        mp.undo()
+    for a in docs:
+        a = json.loads(json.dumps(a))
+        a["title"] = "日本電産 · Ελληνικά · 삼성전자"
+        assert drawn_without_glyph(pdfreport.build(a)) == [], a["kind"]
