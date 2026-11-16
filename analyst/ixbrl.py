@@ -1,0 +1,630 @@
+"""Inline XBRL (iXBRL) document -> pages, tagged facts and headings.
+
+Works for SEC filings (10-K, 10-Q, 20-F, 40-F; us-gaap / ifrs-full taxonomies) and
+European ESEF annual reports (ifrs-full). Every number the report uses is an
+ix:nonFraction tag in the filing, so its value AND its exact place on the page are
+known without guessing: the sniffer goes to the very element that holds it.
+
+Output HTML is sanitised: no scripts, no event handlers, no external frames.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Optional
+from urllib.parse import quote, urljoin
+
+from lxml import etree, html as lxml_html
+
+REMOVE_TAGS = {"script", "noscript", "iframe", "object", "embed", "frame", "frameset", "applet", "base", "link", "meta", "form", "input", "button", "select", "textarea"}
+BLOCK_TAGS = {"div", "p", "table", "tr", "td", "th", "ul", "ol", "li", "section", "article", "h1", "h2", "h3", "h4", "h5", "h6"}
+DEI_KEYS = {
+    "DocumentType", "DocumentPeriodEndDate", "DocumentFiscalYearFocus", "DocumentFiscalPeriodFocus",
+    "EntityRegistrantName", "TradingSymbol", "EntityCentralIndexKey", "CurrentFiscalYearEndDate",
+    "NameOfReportingEntityOrOtherMeansOfIdentification", "DescriptionOfPresentationCurrency",
+    "DomicileOfEntity", "LegalFormOfEntity", "CountryOfIncorporation",
+}
+ASSET_HOSTS = ("www.sec.gov", "sec.gov", "filings.xbrl.org")
+
+
+@dataclass
+class Fact:
+    id: int
+    concept: str          # e.g. "us-gaap:Revenues"
+    local: str            # e.g. "Revenues"
+    context: str
+    unit: Optional[str]
+    value: Optional[float]
+    display: str          # text exactly as printed
+    decimals: Optional[str]
+    page: int = 0
+    row_label: str = ""   # first text cell of the table row holding the figure
+
+
+@dataclass
+class Context:
+    id: str
+    start: Optional[str]
+    end: Optional[str]
+    instant: Optional[str]
+    dimensional: bool
+
+    @property
+    def period_end(self) -> Optional[str]:
+        return self.instant or self.end
+
+    @property
+    def days(self) -> Optional[int]:
+        if not (self.start and self.end):
+            return None
+        from datetime import date
+        a, b = date.fromisoformat(self.start[:10]), date.fromisoformat(self.end[:10])
+        return (b - a).days
+
+
+@dataclass
+class IxDoc:
+    pages: list[str]
+    css: str
+    facts: list[Fact]
+    contexts: dict[str, Context]
+    units: dict[str, str]
+    info: dict[str, str]
+    info_ctx: dict[str, str]
+    headings: list[dict]
+    page_text: list[str]
+    page_fact_count: list[int]
+    warnings: list[str] = field(default_factory=list)
+    page_labels: list[str] = field(default_factory=list)     # page numbers as printed ("i", "20", "F-55"), "" if none
+
+    def fact(self, fid: int) -> Fact:
+        return self.facts[fid]
+
+
+def _local(tag) -> str:
+    if not isinstance(tag, str):
+        return ""
+    tag = tag.rsplit("}", 1)[-1]
+    return tag.split(":", 1)[-1] if ":" in tag else tag
+
+
+def _prefix(tag) -> str:
+    """'ix' for {inlineXBRL ns}x or 'ix:x' (html-parser fallback), else ''."""
+    if not isinstance(tag, str):
+        return ""
+    if tag.startswith("{"):
+        nsuri = tag[1:].split("}", 1)[0]
+        if "inlineXBRL" in nsuri:
+            return "ix"
+        if nsuri.endswith("/instance") or "xbrl.org/2003/instance" in nsuri:
+            return "xbrli"
+        if "xhtml" in nsuri:
+            return ""
+        return "other"
+    if ":" in tag:
+        return tag.split(":", 1)[0].lower()
+    return ""
+
+
+def _text(el) -> str:
+    return re.sub(r"\s+", " ", "".join(el.itertext())).strip()
+
+
+BLOCK_TAGS = {"td", "th", "tr", "p", "div", "li", "br", "table", "section", "h1", "h2", "h3", "h4", "h5", "h6", "dt", "dd"}
+
+
+def _block_text(el) -> str:
+    """Text with a space between cells and blocks, so "Revenue | 3,400 | 1,100" never reads as "Revenue3,4001,100"."""
+    parts = []
+    for ev, e in etree.iterwalk(el, events=("start", "end")):
+        block = isinstance(e.tag, str) and _local(e.tag).lower() in BLOCK_TAGS
+        if ev == "start":
+            if block:
+                parts.append(" ")
+            if isinstance(e.tag, str) and e.text:
+                parts.append(e.text)
+        else:
+            if block:
+                parts.append(" ")
+            if e is not el and e.tail:
+                parts.append(e.tail)
+    return re.sub(r"\s+", " ", "".join(parts)).strip()
+
+
+def parse_number(text: str, fmt: str) -> Optional[float]:
+    f = (fmt or "").split(":")[-1].lower()
+    t = (text or "").strip().replace(" ", "").replace(" ", "")
+    if "zero" in f or t in ("—", "–", "-", "‒"):
+        return 0.0
+    if not t:
+        return None
+    if "comma" in f and "decimal" in f:          # 1.234,56
+        t = t.replace(".", "").replace(",", ".")
+    elif "space" in f or "apos" in f:
+        t = t.replace("'", "").replace(",", ".") if "comma" in f else t.replace("'", "")
+    else:                                         # 1,234.56
+        t = t.replace(",", "")
+    m = re.search(r"\d+(?:\.\d+)?", t)
+    return float(m.group()) if m else None
+
+
+def _strip_wrapper(data: bytes) -> bytes:
+    """EDGAR submission files wrap the HTML in <DOCUMENT><TYPE>…<TEXT>: keep the first HTML document only."""
+    head = data[:4096].lstrip()[:200].upper()
+    if not (head.startswith(b"<DOCUMENT>") or head.startswith(b"<SEC-DOCUMENT>") or b"<TEXT>" in data[:4096].upper()):
+        return data
+    m = re.search(rb"<html[\s>]", data, re.I)
+    if not m:
+        return data
+    end = data.lower().find(b"</html>", m.start())
+    return data[m.start(): end + 7] if end > 0 else data[m.start():]
+
+
+def _load_tree(data: bytes):
+    data = _strip_wrapper(data)
+    opts = dict(huge_tree=True, resolve_entities=False, no_network=True, remove_comments=True)
+    try:
+        root = etree.fromstring(data, etree.XMLParser(**opts))
+    except etree.XMLSyntaxError:
+        root = None
+        # tagged documents need the XML namespaces even when slightly malformed; plain HTML (old EDGAR filings,
+        # S-1s with unclosed <hr>, <br>, <p>) goes to the HTML parser, or the XML recovery nests whole pages in a tag
+        if b"ix:" in data[:3_000_000]:
+            try:
+                root = etree.fromstring(data, etree.XMLParser(recover=True, **opts))
+            except etree.XMLSyntaxError:
+                root = None
+    if root is None or _local(root.tag).lower() != "html" or root.find(".//{*}body") is None:
+        root = lxml_html.document_fromstring(data)
+    return root
+
+
+def _contexts_units(root) -> tuple[dict[str, Context], dict[str, str]]:
+    contexts, units = {}, {}
+    for el in root.iter():
+        name = _local(el.tag)
+        if name == "context":
+            start = end = instant = None
+            dims = False
+            for d in el.iter():
+                ln = _local(d.tag)
+                if ln == "startDate":
+                    start = (d.text or "").strip()
+                elif ln == "endDate":
+                    end = (d.text or "").strip()
+                elif ln == "instant":
+                    instant = (d.text or "").strip()
+                elif ln in ("explicitMember", "typedMember"):
+                    dims = True
+            cid = el.get("id")
+            if cid:
+                contexts[cid] = Context(cid, start, end, instant, dims)
+        elif name == "unit":
+            meas = [(_local(m.tag), (m.text or "").strip()) for m in el.iter() if _local(m.tag) == "measure"]
+            vals = [v.split(":")[-1] for _, v in meas]
+            uid = el.get("id")
+            if uid:
+                units[uid] = "/".join(vals) if vals else uid
+    return contexts, units
+
+
+def _style_has_break(el, which: str) -> bool:
+    s = (el.get("style") or "").lower().replace(" ", "")
+    return f"page-break-{which}:always" in s or f"break-{which}:page" in s
+
+
+PAGE_CLASS = re.compile(r"(^|\s)(pageview|page|pf|pagecontainer|page-container)(\s|$)", re.I)
+PAGE_TOKEN = re.compile(r"^(pf\d*|[\w-]*page[\w-]*)$", re.I)
+NOT_PAGE = re.compile(r"num|number|break|header|footer|nav|title|link", re.I)
+
+
+def _page_like(el) -> bool:
+    """A page container by its class: "pageView" (Workiva), "pf" (pdf2htmlEX), "dmpage", "page-1"…"""
+    cls = el.get("class") or ""
+    if PAGE_CLASS.search(cls):
+        return True
+    return any(PAGE_TOKEN.match(tok) and not NOT_PAGE.search(tok) for tok in cls.split())
+
+
+def _hidden(el) -> bool:
+    return "display:none" in (el.get("style") or "").replace(" ", "").lower()
+
+
+BOX_HEIGHT = re.compile(r"(?:^|;)\s*height:\s*[\d.]+\s*(pt|px|in|mm|cm)", re.I)
+
+
+def _page_box(el) -> bool:
+    """A fixed-size page box, as in PDF-to-HTML renderings (Workiva, Toppan Merrill): one div per printed page."""
+    if not isinstance(el.tag, str) or _local(el.tag).lower() != "div":
+        return False
+    st = (el.get("style") or "").lower().replace(" ", "")
+    return bool(BOX_HEIGHT.search(st)) and ("position:relative" in st or "overflow:hidden" in st or "page-break" in st)
+
+
+def _group(kids: list) -> list[list]:
+    boxes = sum(_page_box(k) for k in kids)
+    if boxes >= 3 and boxes >= 0.6 * len(kids):
+        pages: list[list] = []
+        pending: list = []                       # anything before the first box joins it
+        for k in kids:
+            if _page_box(k):
+                pages.append(pending + [k])
+                pending = []
+            elif pages:
+                pages[-1].append(k)
+            else:
+                pending.append(k)
+        return pages
+    marked = sum(_page_like(k) for k in kids)
+    if marked >= 2 and marked >= 0.5 * len(kids):
+        pages, pending = [], []
+        for k in kids:
+            if _page_like(k):
+                pages.append(pending + [k])
+                pending = []
+            else:
+                pending.append(k)
+        if pending:
+            (pages[-1].extend(pending) if pages else pages.append(pending))
+        return pages
+    pages: list[list] = [[]]
+    for k in kids:
+        before, after = _style_has_break(k, "before"), _style_has_break(k, "after")
+        tag = _local(k.tag).lower()
+        empty = not _text(k) and k.find(".//{*}img") is None and k.find(".//img") is None
+        if (before or after) and (tag == "hr" or empty):
+            if pages[-1]:
+                pages.append([])
+            continue
+        if before and pages[-1]:
+            pages.append([])
+        pages[-1].append(k)
+        if after:
+            pages.append([])
+    return [p for p in pages if p]
+
+
+def _split_pages(body) -> list[list]:
+    container = body
+    for _ in range(6):
+        kids = [k for k in container if isinstance(k.tag, str)]
+        pages = _group(kids)
+        if len(pages) >= 2:
+            return pages
+        shown = [k for k in kids if not _hidden(k)]
+        if len(shown) != 1:
+            break
+        container = shown[0]
+    # page containers further down (pdf2htmlEX puts its .pf pages inside wrappers): the parent holding most of them
+    best, best_n = None, 0
+    for el in body.iter():
+        if not isinstance(el.tag, str) or len(el) < 3:
+            continue
+        kids = [k for k in el if isinstance(k.tag, str)]
+        n = sum(1 for k in kids if _page_like(k) or _page_box(k))
+        if n >= 3 and n >= 0.5 * len(kids) and n > best_n:
+            best, best_n = el, n
+    if best is not None:
+        pages = _group([k for k in best if isinstance(k.tag, str)])
+        if len(pages) >= 2:
+            return pages
+    # breaks nested deeper: use the parent that holds most of them
+    breaks = [e for e in body.iter() if isinstance(e.tag, str) and (_style_has_break(e, "after") or _style_has_break(e, "before"))]
+    if breaks:
+        from collections import Counter
+        parent, n = Counter(b.getparent() for b in breaks).most_common(1)[0]
+        if parent is not None and n >= max(2, len(breaks) // 2):
+            pages = _group([k for k in parent if isinstance(k.tag, str)])
+            if len(pages) >= 2:
+                return pages
+    return _chunks(body)
+
+
+CHUNK = 6000          # characters in a page cut from a document that has none
+
+
+def _chunks(body) -> list[list]:
+    """Reflowed documents without pages: blocks of about a printed page, cut at block boundaries, preferably
+    before a heading, so the sniffer and the AI have pages to work with."""
+    tops = [k for k in body if isinstance(k.tag, str)]
+    total = sum(len(_text(k)) for k in tops)
+    if total <= CHUNK * 3:
+        return [tops]
+
+    def blocks(el, depth=0):
+        if _hidden(el) or depth > 8 or len(_text(el)) <= CHUNK or not any(isinstance(c.tag, str) for c in el):
+            yield el
+            return
+        for c in el:
+            if isinstance(c.tag, str):
+                yield from blocks(c, depth + 1)
+    pages: list[list] = [[]]
+    size = 0
+    for b in (b for t in tops for b in blocks(t)):
+        n = len(_text(b))
+        is_head = _local(b.tag).lower() in ("h1", "h2", "h3") or "titre" in (b.get("class") or "") or "title" in (b.get("class") or "").lower()
+        if pages[-1] and (size + n > CHUNK or (is_head and size > CHUNK / 2)):
+            pages.append([])
+            size = 0
+        pages[-1].append(b)
+        size += n
+    return [p for p in pages if p]
+
+
+def _sanitize(root, base_url: Optional[str]):
+    for el in list(root.iter()):
+        if not isinstance(el.tag, str):
+            continue
+        name = _local(el.tag).lower()
+        if name in REMOVE_TAGS and _prefix(el.tag) in ("", "other"):
+            parent = el.getparent()
+            if parent is not None:
+                if el.tail:
+                    prev = el.getprevious()
+                    if prev is not None:
+                        prev.tail = (prev.tail or "") + el.tail
+                    else:
+                        parent.text = (parent.text or "") + el.tail
+                parent.remove(el)
+            continue
+        for a in list(el.attrib):
+            al = a.lower()
+            if "}" in a or ":" in a or al.startswith("on"):
+                del el.attrib[a]
+            elif al in ("href", "src") and el.attrib[a].strip().lower().startswith(("javascript:", "vbscript:")):
+                del el.attrib[a]
+        if name == "img" and el.get("src"):
+            src = el.get("src")
+            if not src.startswith("data:"):
+                absu = urljoin(base_url or "", src)
+                host = re.sub(r"^https?://([^/]+).*$", r"\1", absu)
+                if host in ASSET_HOSTS:
+                    el.set("src", "/api/asset?u=" + quote(absu, safe=""))
+                else:
+                    el.attrib.pop("src", None)
+        if name == "a":
+            el.attrib.pop("href", None)
+
+
+def filter_css(css: str, used: set[str]) -> str:
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    out, i, n = [], 0, len(css)
+    while i < n:
+        j = css.find("{", i)
+        if j < 0:
+            break
+        prelude = css[i:j].strip()
+        if prelude.startswith("@import") or prelude.startswith("@charset"):
+            k = css.find(";", i)
+            i = k + 1 if 0 <= k < j else j
+            if 0 <= k < j:
+                continue
+            prelude = css[i:j].strip()
+        depth, k = 1, j + 1
+        while k < n and depth:
+            if css[k] == "{":
+                depth += 1
+            elif css[k] == "}":
+                depth -= 1
+            k += 1
+        body = css[j + 1:k - 1]
+        if prelude.startswith(("@media", "@supports")):
+            inner = filter_css(body, used)
+            if inner.strip():
+                out.append(f"{prelude}{{{inner}}}")
+        elif prelude.startswith("@"):
+            out.append(f"{prelude}{{{body}}}")
+        else:
+            classes = re.findall(r"\.(-?[_a-zA-Z][\w-]*)", prelude)
+            if not classes or any(c in used for c in classes):
+                out.append(f"{prelude}{{{body}}}")
+        i = k
+    return "\n".join(out)
+
+
+def _row_label(el) -> str:
+    tr = next((a for a in el.iterancestors() if isinstance(a.tag, str) and a.tag.lower() == "tr"), None)
+    if tr is None:
+        return ""
+    for cell in tr:
+        if not isinstance(cell.tag, str):
+            continue
+        t = _text(cell)
+        if sum(c.isalpha() for c in t) >= 3:
+            return t[:120]
+    return ""
+
+
+def parse(data: bytes, base_url: Optional[str] = None) -> IxDoc:
+    root = _load_tree(data)
+    contexts, units = _contexts_units(root)
+    warnings: list[str] = []
+
+    # header holds contexts/units and hidden facts: read, then drop (SEC filings keep DocumentType and the
+    # fiscal period there: "10-Q", "Q3", "2026")
+    hidden_info: dict[str, str] = {}
+    for el in list(root.iter()):
+        if isinstance(el.tag, str) and _prefix(el.tag) == "ix" and _local(el.tag).lower() == "header":
+            for nn in el.iter():
+                if isinstance(nn.tag, str) and _local(nn.tag).lower() == "nonnumeric":
+                    key = (nn.get("name") or "").split(":")[-1]
+                    val = _text(nn)
+                    if key in DEI_KEYS and key not in hidden_info and val and len(val) <= 200:
+                        hidden_info[key] = val
+            el.getparent().remove(el)
+
+    title_el = next((e for e in root.iter() if isinstance(e.tag, str) and _local(e.tag).lower() == "title"), None)
+    doc_title = _text(title_el) if title_el is not None else ""
+
+    css_parts = []
+    for el in list(root.iter()):
+        if isinstance(el.tag, str) and _local(el.tag).lower() == "style":
+            css_parts.append(el.text or "")
+            el.getparent().remove(el)
+
+    facts: list[Fact] = []
+    info: dict[str, str] = {}
+    info_ctx: dict[str, str] = {}
+    if doc_title and len(doc_title) <= 200:
+        info["DocumentTitle"] = doc_title
+    for el in root.iter():
+        if not isinstance(el.tag, str) or _prefix(el.tag) != "ix":
+            continue
+        ln = _local(el.tag).lower()
+        if ln == "nonfraction":
+            if el.get("{http://www.w3.org/2001/XMLSchema-instance}nil") == "true":
+                continue
+            concept = el.get("name") or ""
+            disp = _text(el)
+            val = parse_number(disp, el.get("format") or "")
+            if val is not None:
+                try:
+                    val *= 10 ** int(el.get("scale") or 0)
+                except ValueError:
+                    pass
+                if el.get("sign") == "-":
+                    val = -val
+            fid = len(facts)
+            facts.append(Fact(fid, concept, concept.split(":")[-1], el.get("contextRef") or el.get("contextref") or "",
+                              el.get("unitRef") or el.get("unitref"), val, disp, el.get("decimals")))
+            el.set("data-f", str(fid))
+        elif ln == "nonnumeric":
+            key = (el.get("name") or "").split(":")[-1]
+            if key in DEI_KEYS and key not in info:
+                t = _text(el)
+                if t and len(t) <= 200:
+                    info[key] = t
+                    info_ctx[key] = el.get("contextRef") or el.get("contextref") or ""
+
+    for key, val in hidden_info.items():
+        info.setdefault(key, val)
+
+    # rename every element to a plain HTML tag
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        pre, ln = _prefix(el.tag), _local(el.tag)
+        if pre == "ix":
+            is_fact = el.get("data-f") is not None
+            fid = el.get("data-f")
+            el.attrib.clear()
+            el.tag = "span"
+            if is_fact:
+                el.set("data-f", fid)
+                el.set("class", "xf")
+        elif pre in ("xbrli", "other"):
+            el.tag = "span"
+        else:
+            el.tag = ln
+    _sanitize(root, base_url)
+    etree.cleanup_namespaces(root)
+
+    for el in root.iter():
+        if isinstance(el.tag, str) and el.get("data-f") is not None:
+            facts[int(el.get("data-f"))].row_label = _row_label(el)
+
+    body = root.find(".//body")
+    if body is None:
+        body = root
+    groups = _split_pages(body)
+
+    # headings: short bold lines outside tables
+    headings: list[dict] = []
+    hid = 0
+    for pi, els in enumerate(groups, start=1):
+        per_page = 0
+        for top in els:
+            for el in top.iter():
+                if not isinstance(el.tag, str) or el.get("data-h") is not None:
+                    continue
+                tag = el.tag.lower()
+                style = (el.get("style") or "").lower()
+                bold = tag in ("b", "strong", "h1", "h2", "h3", "h4", "h5", "h6") or re.search(r"font-weight:\s*(bold|[6-9]00)", style)
+                if not bold:
+                    continue
+                if any(isinstance(a.tag, str) and a.tag.lower() in ("td", "th", "table") for a in el.iterancestors()):
+                    continue
+                if any(isinstance(a.tag, str) and a.get("data-h") is not None for a in el.iterancestors()):
+                    continue
+                if any(isinstance(d.tag, str) and d.tag.lower() in BLOCK_TAGS for d in el.iterdescendants()):
+                    continue
+                # absolutely positioned layouts split a line into several <font> pieces: take the whole line
+                line = el.getparent()
+                if (tag == "font" and line is not None and isinstance(line.tag, str) and line.tag.lower() == "div"
+                        and all(isinstance(c.tag, str) and c.tag.lower() == "font" for c in line)
+                        and all(re.search(r"font-weight:\s*(bold|[6-9]00)", (c.get("style") or "").lower()) for c in line)):
+                    if line.get("data-h") is not None:
+                        continue
+                    el = line
+                t = _text(el)
+                letters = sum(c.isalpha() for c in t)
+                if not (4 <= len(t) <= 90) or letters < 0.6 * len(t) or not t[0].isalpha() or not t[0].isupper():
+                    continue
+                if headings and headings[-1]["text"] == t:
+                    continue
+                el.set("data-h", str(hid))
+                headings.append({"id": hid, "text": t, "page": pi, "el": el})
+                hid += 1
+                per_page += 1
+                if per_page >= 8:
+                    break
+            if per_page >= 8:
+                break
+    # running headers ("Table of Contents" on every page) are not headings
+    from collections import Counter
+    seen = Counter(h["text"].lower() for h in headings)
+    kept = []
+    for h in headings:
+        el = h.pop("el")
+        if seen[h["text"].lower()] > 3:
+            del el.attrib["data-h"]
+        else:
+            kept.append(h)
+    headings = kept
+
+    pages, page_text, page_fact_count = [], [], []
+    for pi, els in enumerate(groups, start=1):
+        n = 0
+        for top in els:
+            for el in top.iter():
+                if isinstance(el.tag, str):
+                    f = el.get("data-f")
+                    if f is not None:
+                        facts[int(f)].page = pi
+                        n += 1
+        page_fact_count.append(n)
+        page_text.append(re.sub(r"\s+", " ", " ".join(_block_text(t) for t in els)).strip())
+        pages.append("".join(etree.tostring(t, method="html", encoding="unicode", with_tail=True) for t in els))
+
+    if len(pages) < 2 and len(page_text[0] if page_text else "") > 20000:
+        from .i18n import t
+        warnings.append(t("Il documento non ha interruzioni di pagina riconoscibili: mostrato come pagina unica.",
+                          "The document has no recognisable page breaks: shown as a single page."))
+    return IxDoc(pages, "\n".join(css_parts), facts, contexts, units, info, info_ctx, headings,
+                 page_text, page_fact_count, warnings, _consistent([page_label(t) for t in page_text]))
+
+
+def _consistent(labels: list[str]) -> list[str]:
+    """Keep numeric page labels only when they run in step with the pages (label − index constant)."""
+    from collections import Counter
+    offs = Counter(int(lb) - i for i, lb in enumerate(labels) if lb.isdigit())
+    if not offs:
+        return labels
+    off, n = offs.most_common(1)[0]
+    numeric = sum(offs.values())
+    if n < 3 or n < 0.5 * numeric:
+        return ["" if lb.isdigit() else lb for lb in labels]
+    return ["" if lb.isdigit() and int(lb) - i != off else lb for i, lb in enumerate(labels)]
+
+
+PAGE_NO = re.compile(r"^(?:[ivxlc]{1,7}|[A-Z]{1,2}-\d{1,3}|\d{1,4})$", re.I)
+
+
+def page_label(text: str) -> str:
+    """The page number printed at the top or bottom of a page, if there is one."""
+    words = text.split()
+    for w in (words[:1] + words[-1:]) if words else []:
+        w = w.strip(".")
+        if PAGE_NO.match(w) and not re.fullmatch(r"(19|20)\d\d", w):
+            return w
+    return ""

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="__UI__">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Report Sniffer</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' fill='none' stroke='%23ff9f1a' stroke-width='2' stroke-linecap='round'%3E%3Crect width='32' height='32' fill='black' stroke='none'/%3E%3Cpath d='M7 11H24M7 21H24M7 11a3 5 0 0 0 0 10'/%3E%3Cellipse cx='24' cy='16' rx='3' ry='5'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css?v=__V__">
+</head>
+<body>
+
+<!-- Home: choose the document to read -->
+<section id="home" class="screen">
+  <header class="status">
+    <h1>Report Sniffer</h1>
+    <span class="byline">by AC Quant Lab</span>
+    <button id="ai-state" type="button" class="state"></button>
+  </header>
+  <div class="home-inner">
+    <canvas id="hero" height="40" aria-hidden="true"></canvas>
+    <p class="lead" data-i18n="lead">A rolled banknote sniffs a financial document, figure by figure, and writes the report as it goes.</p>
+    <p id="browser-warn" class="warn" data-i18n-html="warn" hidden>This browser is not supported: Report Sniffer only works in
+      Chromium-based browsers (Chrome, Brave, Edge, Arc). In Safari and Firefox the document is not read. Open
+      <b>http://127.0.0.1:8765</b> in one of those browsers, or start Report Sniffer again from the terminal: it opens the right browser by itself.</p>
+
+    <form id="search-form" autocomplete="off">
+      <label for="q" class="sr" data-i18n="search_label">Search for an instrument</label>
+      <span class="prompt"><input id="q" type="search" data-i18n-ph="search_ph" placeholder="Microsoft, Ferrari, BTC-USD, ^GSPC, EURUSD=X, gold…" autofocus></span>
+      <button type="submit" data-i18n="search_btn">Search</button>
+    </form>
+    <p class="coverage" data-i18n-html="coverage"></p>
+    <div id="results" aria-live="polite"></div>
+
+    <div class="alt">
+      <form id="url-form" class="pane" autocomplete="off">
+        <label for="url" data-i18n="url_label">Or paste the address of a document (PDF, HTML, iXBRL)</label>
+        <div class="row"><input id="url" type="url" placeholder="https://…/report.pdf"><button type="submit" data-i18n="read_btn">Read</button></div>
+      </form>
+      <div id="drop" class="pane" tabindex="0" role="button" data-i18n-aria="drop_aria" aria-label="Upload a file">
+        <span data-i18n-html="drop"><b>Upload a document</b><br>Drop a PDF or HTML file here (statements, report, KID, in English or Italian) or <u>choose a file</u></span>
+        <input id="file" type="file" accept=".pdf,.htm,.html,.xhtml,.xml" hidden>
+      </div>
+    </div>
+
+    <div id="recent"></div>
+  </div>
+  <footer class="opts">
+    <label><span data-i18n="opt_lang">Report language</span>
+      <select id="opt-lang"><option value="en">English</option><option value="it">Italiano</option></select>
+    </label>
+    <span class="theme-row"><span data-i18n="theme">Theme</span><span class="theme-pick" role="group" data-i18n-aria="theme" aria-label="Theme"></span></span>
+    <button id="open-settings" type="button" class="key" data-i18n="settings">Settings</button>
+    <button id="quit" type="button" class="key" data-i18n="quit">Quit</button>
+  </footer>
+</section>
+
+<!-- Loading -->
+<section id="loading" class="screen" hidden>
+  <div class="load-box">
+    <p id="load-step"></p>
+    <div class="bar"><i id="load-bar"></i></div>
+    <p id="load-error" class="error" hidden></p>
+    <button id="load-back" type="button" hidden data-i18n="back_search">Back to search</button>
+  </div>
+</section>
+
+<!-- Reading -->
+<section id="reader" class="screen" hidden>
+  <header id="topbar">
+    <button id="back" type="button" data-i18n="new_analysis">‹ New analysis</button>
+    <div class="ctrl">
+      <button id="play" type="button" data-i18n="play">Play</button>
+      <button id="restart" type="button" data-i18n="restart">Restart</button>
+      <select id="lang2" data-i18n-aria="opt_lang" aria-label="Report language"><option value="en">English</option><option value="it">Italiano</option></select>
+      <span class="theme-pick" role="group" data-i18n-aria="theme" aria-label="Theme"></span>
+      <span class="dl">
+        <button id="download" type="button" aria-haspopup="menu" aria-expanded="false" data-i18n="download">Download</button>
+        <span id="dl-menu" class="dl-menu" role="menu" hidden>
+          <button type="button" role="menuitem" data-fmt="report.pdf" data-i18n="dl_pdf">Report (PDF)</button>
+          <button type="button" role="menuitem" data-fmt="report.pptx" data-i18n="dl_pptx">Slides (PowerPoint)</button>
+          <button type="button" role="menuitem" data-fmt="data.xlsx" data-i18n="dl_xlsx">Figures (Excel)</button>
+        </span>
+      </span>
+    </div>
+  </header>
+  <div id="frame">
+    <div id="stage">
+      <div id="doc-layer"><iframe id="doc" title="Document" sandbox="allow-same-origin"></iframe></div>
+      <canvas id="marks"></canvas>
+      <canvas id="sniffer"></canvas>
+      <div id="finale" hidden></div>
+    </div>
+    <aside id="report">
+      <div id="r-reading" hidden></div>
+      <div class="r-head">
+        <h2 id="r-title"></h2>
+        <p id="r-sub"></p>
+        <p id="r-count"><b id="r-n">0</b> <span id="r-of">of</span> <span id="r-m">0</span> <span id="r-read">figures read</span><br><small id="r-pages"></small></p>
+      </div>
+      <div id="r-section">
+        <h3 id="r-sec-title"></h3>
+        <table id="r-table"><thead></thead><tbody></tbody></table>
+      </div>
+      <div id="r-other">
+        <h3 id="r-other-title">Other figures read</h3>
+        <ul id="r-other-list"></ul>
+      </div>
+      <p id="r-warn"></p>
+    </aside>
+  </div>
+</section>
+
+<!-- Settings (also the first-run setup: the AI is required) -->
+<dialog id="settings">
+  <form method="dialog" id="settings-form">
+    <h2 id="set-title" data-i18n="settings">Settings</h2>
+    <p id="set-intro" class="intro" data-i18n="setup_intro" hidden>Every document is read with an AI, so it is understood instead of only mined for figures. Choose how to connect one.</p>
+    <fieldset class="modes">
+      <legend data-i18n="ai_label">AI that reads the documents</legend>
+      <label><input type="radio" name="aimode" value="sub"> <span data-i18n="mode_sub">A subscription I already have</span></label>
+      <label><input type="radio" name="aimode" value="key"> <span data-i18n="mode_key">An API key</span></label>
+    </fieldset>
+    <div id="mode-sub">
+      <label><span data-i18n="sub_label">Subscription</span><select id="set-sub"></select></label>
+      <small id="sub-state"></small>
+    </div>
+    <div id="mode-key">
+      <label><span data-i18n="provider_label">Provider</span><select id="set-provider"></select></label>
+      <label><span data-i18n="key_label">API key</span>
+        <input id="set-key" type="password" autocomplete="off">
+        <small id="key-state"></small>
+      </label>
+    </div>
+    <label><span data-i18n="model_label">Model</span>
+      <input id="set-model" type="text" autocomplete="off" spellcheck="false">
+    </label>
+    <label><span data-i18n="ua_label">Identity for SEC EDGAR (User-Agent)</span>
+      <input id="set-ua" type="text" data-i18n-ph="ua_ph" placeholder="Jane Doe jane@example.com">
+      <small data-i18n="ua_help">The SEC asks whoever downloads filings for a name and a contact. It stays on this computer.</small>
+    </label>
+    <p id="set-msg" class="error" hidden></p>
+    <p id="set-ok" class="ok" hidden></p>
+    <div class="row end">
+      <button id="set-close" value="cancel" type="submit" class="link" data-i18n="close">Close</button>
+      <button id="set-save" type="button" data-i18n="save_test">Save and test</button>
+    </div>
+  </form>
+</dialog>
+
+<script type="module" src="/static/app.js?v=__V__"></script>
+</body>
+</html>
