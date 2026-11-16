@@ -230,6 +230,18 @@ environment variables above.
 The server listens on `127.0.0.1` only. Documents and responses are cached in `.data/` (in `~/.report-sniffer/data/` by the downloaded app). The SEC identity is in
 `~/.report-sniffer/config.json`; the default is generic and no email is sent unless you enter one.
 
+### Security
+
+- **Only the app's own page can use the server.** It answers only to localhost names (no DNS rebinding) and refuses
+  requests that other websites make the browser send (`Origin` / `Sec-Fetch-Site` headers): a page open in another tab
+  cannot start analyses on your AI account, change the settings or stop the app. Every POST must be a JSON object
+  (uploads excepted), so plain HTML forms from other sites are refused too.
+- **Documents are data, never code.** Filings are shown sanitised (no scripts, frames, forms or event handlers) in a
+  sandboxed frame with a strict Content Security Policy; text from documents and search results is escaped in the
+  interface; in the Excel export it is always stored as text, never as a formula.
+- **API keys** are stored in `~/.report-sniffer/ai.json`, created readable by you only (`0600`), or read from the
+  environment variables above. Subscriptions use the vendor's own CLI: the app never sees those credentials.
+
 ## Known limits
 
 - A document already read is kept in `.data/` (`~/.report-sniffer/data/` for the downloaded app); after an update of Report Sniffer it is read again (the cache key

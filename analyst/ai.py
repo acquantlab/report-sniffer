@@ -122,9 +122,12 @@ def save_settings(provider: Optional[str] = None, key: Optional[str] = None, mod
             else:
                 data["models"].pop(provider, None)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    AI_FILE.write_text(json.dumps(data, indent=2))
+    # the file holds API keys: created readable by the owner only, never world-readable even for a moment
+    fd = os.open(AI_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(json.dumps(data, indent=2))
     try:
-        os.chmod(AI_FILE, 0o600)
+        os.chmod(AI_FILE, 0o600)               # a file written by an earlier version may still be 0644
     except OSError:
         pass
 

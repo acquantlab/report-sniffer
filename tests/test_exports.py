@@ -4,6 +4,7 @@ import json
 import re
 import sys
 import zipfile
+from urllib.parse import quote
 from pathlib import Path
 
 import pytest
@@ -138,3 +139,24 @@ def test_tagged_quarter_is_named_as_the_issuer_names_it(no_ai):
     assert card["revenue"]["vs"] == "Q3 FY2024"
     a = pipeline.run({"kind": "upload", "data": html.encode(), "name": "q.htm", "lang": "it"}, lambda *_: None)
     assert {c["key"]: c for c in a["card"]}["revenue"]["vs"] == "3° trim. es. 2024"
+
+
+def test_downloads_named_in_any_script(no_ai):
+    # headers are Latin-1: a Japanese or Greek name used to make the download fail with HTTP 500
+    import server
+    for name, plain, fallback in (("日本電産-report-en.pdf", "report-en.pdf", "report"), ("Société-Générale-data-it.xlsx", "Societe-Generale-data-it.xlsx", "data"),
+                                  ("Ελληνικά.xhtml", "document.xhtml", "document"), ("^GSPC-daily-prices.csv", "^GSPC-daily-prices.csv", "document"),
+                                  ("", "document", "document")):
+        cd = server.attachment(name, fallback)
+        cd.encode("latin-1")
+        assert f'filename="{plain}"' in cd, cd
+        assert cd.endswith("filename*=UTF-8''" + quote(name or fallback, safe="")), cd
+    a = s1()
+    a["title"] = "日本電産株式会社"
+    (pipeline.DOCS / a["id"] / "analysis.json").write_text(json.dumps(a, ensure_ascii=False), encoding="utf-8")
+    client = TestClient(server.app, base_url="http://127.0.0.1:8765")
+    for what in ("report.pdf", "report.pptx", "data.xlsx"):
+        r = client.get(f"/api/doc/{a['id']}/{what}")
+        assert r.status_code == 200, what
+        cd = r.headers["content-disposition"]
+        assert "filename*=UTF-8''" + quote("日本電産株式会社") in cd and 'filename="' in cd

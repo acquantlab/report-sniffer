@@ -9,10 +9,11 @@ import os
 import re
 import threading
 import time
+import unicodedata
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
@@ -31,6 +32,26 @@ app.mount("/static", StaticFiles(directory=WEB), name="static")
 pool = ThreadPoolExecutor(max_workers=3)
 jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
+JOB_TTL = 3600                      # finished jobs are forgotten after an hour
+
+LOCAL_ORIGINS = {f"http://{h}:{PORT}" for h in ("127.0.0.1", "localhost", "[::1]")}
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def cross_site(request: Request) -> bool:
+    """A request another website made the browser send (CSRF): any page open in the browser can POST to
+    127.0.0.1 or load /api/ URLs as images or scripts, starting analyses that spend the user's AI credits,
+    changing settings or stopping the app. Browsers mark such requests (Origin, Sec-Fetch-Site) and pages
+    cannot forge these headers. Requests without them (the launcher, curl) do not come from a web page."""
+    site = request.headers.get("sec-fetch-site")
+    other_site = site in ("cross-site", "same-site")
+    if other_site and (request.url.path.startswith("/api/") or request.method not in SAFE_METHODS):
+        return True                    # opening "/" from a link elsewhere is still fine
+    if request.method not in SAFE_METHODS:
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in LOCAL_ORIGINS:
+            return True                # "null" included: sandboxed frames, file:// pages
+    return False
 
 
 @app.middleware("http")
@@ -39,7 +60,24 @@ async def local_only(request: Request, call_next):
     host = (request.headers.get("host") or "").split(":")[0]
     if host not in ("127.0.0.1", "localhost", "[::1]"):
         return Response("forbidden", status_code=403)
+    # CSRF guard: only the app's own page may call the API
+    if cross_site(request):
+        return Response("forbidden: cross-site request", status_code=403)
     return await call_next(request)
+
+
+async def json_body(request: Request) -> dict:
+    """The JSON object of a POST. Requiring application/json also keeps plain HTML forms out: a browser
+    sends that type to another origin only after a CORS preflight, which this server never grants."""
+    if not request.headers.get("content-type", "").startswith("application/json"):
+        raise HTTPException(415, ui("JSON richiesto", "JSON required"))
+    try:
+        body = await request.json()
+    except ValueError:
+        raise HTTPException(400, ui("JSON non valido", "invalid JSON"))
+    if not isinstance(body, dict):
+        raise HTTPException(400, ui("richiesta non valida", "invalid request"))
+    return body
 
 
 @app.middleware("http")
@@ -73,9 +111,7 @@ def status():
 
 @app.post("/api/settings")
 async def settings(request: Request):
-    if not request.headers.get("content-type", "").startswith("application/json"):
-        raise HTTPException(415, ui("JSON richiesto", "JSON required"))
-    body = await request.json()
+    body = await json_body(request)
     sources.CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     if "sec_user_agent" in body:
         ua = str(body["sec_user_agent"]).strip()[:200]
@@ -173,8 +209,11 @@ def _doc_url(kind: str, url: str) -> str:
 
 def _start(req: dict) -> str:
     jid = uuid.uuid4().hex[:12]
-    job = {"id": jid, "status": "running", "step": ui("In coda", "Queued"), "progress": 0.02, "error": None, "analysis_id": None, "t": time.time()}
+    now = time.time()
+    job = {"id": jid, "status": "running", "step": ui("In coda", "Queued"), "progress": 0.02, "error": None, "analysis_id": None, "t": now}
     with jobs_lock:
+        for old in [k for k, j in jobs.items() if j["status"] != "running" and now - j["t"] > JOB_TTL]:
+            del jobs[old]
         jobs[jid] = job
 
     def progress(step: str, p: float):
@@ -194,7 +233,7 @@ def _start(req: dict) -> str:
 
 @app.post("/api/analyze")
 async def analyze(request: Request):
-    body = await request.json()
+    body = await json_body(request)
     kind = body.get("kind")
     if kind not in ("sec", "esef", "market", "url"):
         raise HTTPException(400, ui("tipo di richiesta non valido", "invalid request type"))
@@ -207,7 +246,7 @@ async def analyze(request: Request):
 
 @app.post("/api/relang")
 async def relang(request: Request):
-    body = await request.json()
+    body = await json_body(request)
     lang = body.get("lang")
     if lang not in ("it", "en") or not re.fullmatch(r"[0-9a-f]{16}", str(body.get("id", ""))):
         raise HTTPException(400, ui("richiesta non valida", "invalid request"))
@@ -263,6 +302,20 @@ def doc_img(aid: str, name: str):
     return FileResponse(p, media_type="image/jpeg" if name.endswith(".jpg") else "image/png")
 
 
+def attachment(name: str, fallback: str) -> str:
+    """Content-Disposition of a download. Headers travel as Latin-1, so a name in Greek, Cyrillic or Japanese
+    cannot go in filename="…" as it is: that gets an ASCII spelling ("Société" → "Societe"), and filename*
+    (RFC 6266 / 5987) carries the real name, which browsers prefer."""
+    name = re.sub(r"[^\w.^=-]+", "-", name).strip("-.") or fallback
+
+    def ascii_only(s: str) -> str:
+        s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
+        return re.sub(r"-{2,}", "-", re.sub(r"[^\w.^=-]+", "-", s)).strip("-.")
+    stem, _, ext = name.rpartition(".") if "." in name else (name, "", "")
+    plain = (ascii_only(stem) or fallback) + ("." + ascii_only(ext) if ascii_only(ext) else "")
+    return f"attachment; filename=\"{plain}\"; filename*=UTF-8''{quote(name, safe='')}"
+
+
 EXPORTS = {
     "report.pdf": ("application/pdf", "report"),
     "report.pptx": ("application/vnd.openxmlformats-officedocument.presentationml.presentation", "slides"),
@@ -285,7 +338,7 @@ def export(aid: str, what: str, theme: str = "terminal"):
     data = pdfreport.build(a, theme) if what == "report.pdf" else pptx_report.build(a, theme) if what == "report.pptx" else xlsx_export.build(a)
     ext = what.rsplit(".", 1)[1]
     return Response(data, media_type=media,
-                    headers={"Content-Disposition": f'attachment; filename="{name}-{suffix}-{a.get("lang", "en")}.{ext}"',
+                    headers={"Content-Disposition": attachment(f'{name}-{suffix}-{a.get("lang", "en")}.{ext}', suffix),
                              "Cache-Control": "no-store"})
 
 
@@ -317,8 +370,7 @@ def original(kind: str, query: str = "", symbol: str = "", url: str = "", form: 
             raise HTTPException(400, ui("richiesta non valida", "invalid request"))
     except sources.SourceError as e:
         raise HTTPException(502, str(e))
-    safe = re.sub(r"[^\w.^=-]+", "-", name).strip("-") or "document"
-    return Response(data, media_type=media, headers={"Content-Disposition": f'attachment; filename="{safe}"'})
+    return Response(data, media_type=media, headers={"Content-Disposition": attachment(name, "document")})
 
 
 @app.get("/api/recent")

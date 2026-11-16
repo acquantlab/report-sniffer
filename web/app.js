@@ -123,7 +123,8 @@ window.addEventListener("error", (e) => showError(e.message || String(e.error)))
 window.addEventListener("unhandledrejection", (e) => showError(e.reason?.message || String(e.reason)));
 
 const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// HTML-escapes text for markup and for attribute values in either kind of quote ('…' holds the JSON of search results)
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -230,7 +231,10 @@ async function downloadOriginal(btn) {
       throw new Error(msg);
     }
     const cd = r.headers.get("content-disposition") || "";
-    const name = (cd.match(/filename="([^"]+)"/) || [])[1] || "document";
+    // filename* holds the real name (Greek, Japanese…); filename="…" its ASCII spelling
+    const star = (cd.match(/filename\*=UTF-8''([^;]+)/i) || [])[1];
+    let name = (cd.match(/filename="([^"]+)"/) || [])[1] || "document";
+    try { if (star) name = decodeURIComponent(star); } catch { /* malformed: keep the ASCII name */ }
     const link = document.createElement("a");
     link.href = URL.createObjectURL(await r.blob());
     link.download = name;
@@ -486,7 +490,7 @@ function pageLabel(n) {
 function fmtPages(pages) {
   if (!pages?.length) return "";
   const T = L();
-  return (pages.length > 1 ? T.pp + " " : T.p + " ") + pages.map(pageLabel).join(", ");
+  return esc((pages.length > 1 ? T.pp + " " : T.p + " ") + pages.map(pageLabel).join(", "));      // goes into innerHTML
 }
 
 class Director {
