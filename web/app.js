@@ -123,7 +123,8 @@ window.addEventListener("error", (e) => showError(e.message || String(e.error)))
 window.addEventListener("unhandledrejection", (e) => showError(e.reason?.message || String(e.reason)));
 
 const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// HTML-escapes text for markup and for attribute values in either kind of quote ('…' holds the JSON of search results)
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -486,7 +487,7 @@ function pageLabel(n) {
 function fmtPages(pages) {
   if (!pages?.length) return "";
   const T = L();
-  return (pages.length > 1 ? T.pp + " " : T.p + " ") + pages.map(pageLabel).join(", ");
+  return esc((pages.length > 1 ? T.pp + " " : T.p + " ") + pages.map(pageLabel).join(", "));      // goes into innerHTML
 }
 
 class Director {

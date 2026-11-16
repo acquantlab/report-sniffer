@@ -41,7 +41,10 @@ def build(a: dict) -> bytes:
 
 def _build(a: dict) -> bytes:
     buf = io.BytesIO()
-    wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_numbers": False, "strings_to_urls": False})
+    # strings_to_formulas off: labels and texts come from the document (or the AI), and a line printed as
+    # "=HYPERLINK(…)" must stay text in the user's Excel (formula injection); our own formulas use write_formula
+    wb = xlsxwriter.Workbook(buf, {"in_memory": True, "strings_to_numbers": False, "strings_to_urls": False,
+                                   "strings_to_formulas": False})
     wb.set_properties({"title": f"{a.get('title', '')} — Report Sniffer", "author": "Report Sniffer"})
     labels = {str(k): v for k, v in (a.get("page_labels") or {}).items()}
 
