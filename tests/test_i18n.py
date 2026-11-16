@@ -100,3 +100,15 @@ def test_web_interface_has_every_language():
     """ % (HERE.parent / "web" / "i18n.js").as_uri()
     out = subprocess.run([node, "--input-type=module", "-e", check], capture_output=True, text=True, check=True).stdout
     assert json.loads(out) == []
+
+
+def test_ai_summary_is_checked_sentence_by_sentence_in_every_script():
+    # a sentence with a number the pages do not print is dropped, the others stay (also without Latin capitals)
+    from analyst import reader
+    pages = {1: "Revenue 1,234 Net loss (56)"}
+    for summary, kept in (("Выручка составила 1,234. Убыток составил 999.", "Выручка составила 1,234."),
+                          ("营收为1,234。亏损为999。", "营收为1,234。"),
+                          ("Revenue was 1,234. Loss was 999.", "Revenue was 1,234."),
+                          ("营收为1,234。亏损为56。", "营收为1,234。亏损为56。")):
+        res = {"summary": summary, "sections": [], "figures": [], "findings": []}
+        assert reader.validate(res, pages, {})["summary"] == kept, summary
