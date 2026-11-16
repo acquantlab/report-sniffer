@@ -57,10 +57,11 @@ SYSTEM = (
 
 
 def _lang_note() -> str:
-    from .i18n import lang
+    from .i18n import ENGLISH_NAME, lang
     if lang() == "en":
         return " Write every text field in English; copy figures exactly as they are written in the document."
-    return " Write every text field in Italian; copy figures exactly as they are written in the document (do not translate them)."
+    return (f" Write every text field in {ENGLISH_NAME[lang()]}; copy figures exactly as they are written in the document "
+            "(do not translate them).")
 
 
 def is_cli(pid: str) -> bool:
@@ -198,8 +199,9 @@ def _call(prompt: str, schema: dict, max_tokens: int = 16000) -> Optional[dict]:
     return _call_openai_compatible(pid, key, model, system, prompt, schema, max_tokens)
 
 
-CUT = ("La risposta dell'AI è stata troncata: riprova o scegli un modello con più spazio di risposta.",
-       "The AI's answer was cut short: try again or choose a model with a larger output limit.")
+def _cut() -> str:
+    return _msg("La risposta dell'AI è stata troncata: riprova o scegli un modello con più spazio di risposta.",
+                "The AI's answer was cut short: try again or choose a model with a larger output limit.")
 
 
 def _call_anthropic(key: str, model: str, system: str, prompt: str, schema: dict, max_tokens: int) -> Optional[dict]:
@@ -226,7 +228,7 @@ def _call_anthropic(key: str, model: str, system: str, prompt: str, schema: dict
     if resp.stop_reason == "refusal":
         raise AIError("Anthropic: " + _msg("il modello ha rifiutato la richiesta.", "the model declined the request."))
     if resp.stop_reason == "max_tokens":
-        raise AIError(_msg(*CUT))
+        raise AIError(_cut())
     text = next((b.text for b in resp.content if b.type == "text"), "")
     return _json(text)
 
@@ -342,7 +344,7 @@ def _call_openai_compatible(pid: str, key: str, model: str, system: str, prompt:
         return None
     out = _json(text)
     if out is None and choice.get("finish_reason") == "length":
-        raise AIError(_msg(*CUT))
+        raise AIError(_cut())
     return out
 
 

@@ -9,7 +9,7 @@ from collections import Counter
 from datetime import date
 from typing import Optional
 
-from .i18n import lang, t
+from .i18n import lang, num, pct_sign, t
 from .ixbrl import Fact, IxDoc
 
 # key -> (it, en, kind, candidate concepts by local name, tried in order)
@@ -297,17 +297,17 @@ def checks(m: dict) -> list[dict]:
     cur = next((x["cur"].get("unit") for x in m.values() if x.get("cur") and x["cur"].get("unit") and len(x["cur"]["unit"]) == 3), "")
 
     def add(name, lhs, rhs, tol, pages, between=False, why=None):
-        """between: other lines may sit between the figures (amortisation, equity-method income…); why: (it, en) reason."""
+        """between: other lines may sit between the figures (amortisation, equity-method income…); why: the reason, translated."""
         if lhs is None or rhs is None or (lhs == 0 and rhs == 0):
             return
         diff = abs(lhs - rhs) / max(abs(rhs), abs(lhs), 1e-9)
         if diff <= tol:
             detail = ok
         elif between:
-            it, en = why or ("altre voci tra le due cifre", "other lines sit between the figures")
-            detail = t(f"differenza di {fmt_money(abs(lhs - rhs), cur)}: {it}", f"differs by {fmt_money(abs(lhs - rhs), cur)}: {en}")
+            detail = t("differenza di {d}: {why}", "differs by {d}: {why}", d=fmt_money(abs(lhs - rhs), cur),
+                       why=why or t("altre voci tra le due cifre", "other lines sit between the figures"))
         else:
-            detail = t(f"scarto del {fmt_num(diff * 100, 1)}%", f"off by {fmt_num(diff * 100, 1)}%")
+            detail = t("scarto del {p}", "off by {p}", p=fmt_num(diff * 100, 1) + pct_sign())
         out.append({"name": name, "ok": diff <= tol, "diff_pct": round(diff * 100, 2), "pages": pages, "detail": detail})
 
     v = lambda k: _v(m, k)
@@ -358,7 +358,7 @@ def checks(m: dict) -> list[dict]:
         add(t("Flussi operativo + investimenti + finanziamenti (+ cambi) ≈ variazione della cassa",
               "Operating + investing + financing cash flows (+ exchange rates) ≈ change in cash"), lhs, dc, 0.01 if fx is not None else 0.02,
             _pages(m, "cfo", "cfi", "cff", "cash_change"), between=small,
-            why=("probabilmente effetto cambi o perimetro, voce non letta", "likely exchange-rate or scope effects, a line not read"))
+            why=t("probabilmente effetto cambi o perimetro, voce non letta", "likely exchange-rate or scope effects, a line not read"))
     return out
 
 
@@ -372,14 +372,27 @@ def label(key: str) -> str:
 SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥", "CHF": "CHF ", "CAD": "C$", "SEK": "SEK ", "DKK": "DKK ", "NOK": "NOK "}
 
 
+# large amounts in each language: "$16.3B", "$16,3 mld", "16,3 Mrd.", "$163亿" (Chinese and Japanese count in 10^4 and 10^8)
+NB = "\u00a0"
+UNITS = {
+    "en": ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")),
+    "it": ((1e12, " bln"), (1e9, " mld"), (1e6, " mln"), (1e3, " mila")),
+    "es": ((1e12, " bill."), (1e9, " mil M"), (1e6, " M"), (1e3, " mil")),
+    "fr": ((1e9, NB + "Md"), (1e6, NB + "M"), (1e3, NB + "k")),
+    "de": ((1e12, " Bio."), (1e9, " Mrd."), (1e6, " Mio."), (1e3, " Tsd.")),
+    "pt": ((1e12, " tri"), (1e9, " bi"), (1e6, " mi"), (1e3, " mil")),
+    "ru": ((1e12, " трлн"), (1e9, " млрд"), (1e6, " млн"), (1e3, " тыс.")),
+    "zh": ((1e12, "万亿"), (1e8, "亿"), (1e4, "万")),
+    "ja": ((1e12, "兆"), (1e8, "億"), (1e4, "万")),
+}
+
+
 def fmt_money(v: Optional[float], cur: str = "") -> str:
     if v is None:
         return "—"
     sym = SYMBOLS.get(cur.upper(), (cur + " ") if cur else "")
     a, sign = abs(v), "−" if v < 0 else ""
-    units = ((1e12, "T"), (1e9, "B"), (1e6, "M"), (1e3, "K")) if lang() == "en" else \
-        ((1e12, " bln"), (1e9, " mld"), (1e6, " mln"), (1e3, " mila"))
-    for div, suf in units:
+    for div, suf in UNITS.get(lang(), UNITS["en"]):
         if a >= div:
             n = a / div
             s = f"{n:,.1f}" if n < 100 else f"{n:,.0f}"
@@ -396,8 +409,8 @@ def fmt_pct(v: Optional[float], dec: int = 1, signed: bool = False) -> str:
         return "—"
     if abs(v) >= 10:                       # +1,300% rather than +1300.4%
         dec = 0
-    s = f"{v * 100:+,.{dec}f}%" if signed else f"{v * 100:,.{dec}f}%"
-    return _it(s).replace("-", "−")
+    s = f"{v * 100:+,.{dec}f}" if signed else f"{v * 100:,.{dec}f}"
+    return (_it(s) + pct_sign()).replace("-", "−")
 
 
 def art(s: str, prep: bool = True) -> str:
@@ -410,10 +423,8 @@ def art(s: str, prep: bool = True) -> str:
 
 
 def _it(s: str) -> str:
-    """Number written the report's way: 1.234,5 in Italian, 1,234.5 in English."""
-    if lang() == "en":
-        return s
-    return s.replace(",", "§").replace(".", ",").replace("§", ".")
+    """A number written the report language's way: 1,234.5 in English, 1.234,5 in Italian, 1 234,5 in French."""
+    return num(s)
 
 
 def fmt_value(key: str, v: Optional[float], cur: str) -> str:
@@ -443,104 +454,108 @@ def findings(m: dict, d: dict, cur: str, period: str = "", vs: str = "") -> list
         out.append((score, {"text": text, "pages": [x for x in pages if x], "keys": keys}))
 
     if g["revenue"] is not None:
-        up = g["revenue"] >= 0
         rv, rp, gr = money(_v(m, "revenue"), cur), money(_v(m, "revenue", "prev"), cur), pct(abs(g["revenue"]))
-        when = f" ({period} vs {vs})" if period and vs else ""
+        kw = dict(g=gr, art_g=art(gr), v=rv, p=rp, when=t(" ({a} vs {b})", " ({a} vs {b})", a=period, b=vs) if period and vs else "")
         add(1 + abs(g["revenue"]) * 4,
-            t(f"Ricavi {'in crescita' if up else 'in calo'} {art(gr)} a {rv} (da {rp}){when}.",
-              f"Revenue {'up' if up else 'down'} {gr} to {rv} (from {rp}){when}."), _pages(m, "revenue"), ["revenue"])
+            t("Ricavi in crescita {art_g} a {v} (da {p}){when}.", "Revenue up {g} to {v} (from {p}){when}.", **kw) if g["revenue"] >= 0 else
+            t("Ricavi in calo {art_g} a {v} (da {p}){when}.", "Revenue down {g} to {v} (from {p}){when}.", **kw), _pages(m, "revenue"), ["revenue"])
     ni_c, ni_p = _v(m, "net_income"), _v(m, "net_income", "prev")
     if ni_c is not None and ni_p is not None and (ni_c < 0 or ni_p < 0):
         # losses: say what happened to the loss instead of a growth rate of a negative number
-        a, b = money(ni_p, cur), money(ni_c, cur)
+        kw = dict(a=money(ni_p, cur), b=money(ni_c, cur))
         if ni_c < 0 and ni_p < 0:
-            wider = ni_c < ni_p
-            txt = t(f"Perdita netta {'ampliata' if wider else 'ridotta'} da {a} a {b}.", f"Net loss {'widened' if wider else 'narrowed'} from {a} to {b}.")
+            txt = t("Perdita netta ampliata da {a} a {b}.", "Net loss widened from {a} to {b}.", **kw) if ni_c < ni_p else \
+                t("Perdita netta ridotta da {a} a {b}.", "Net loss narrowed from {a} to {b}.", **kw)
         elif ni_c < 0:
-            txt = t(f"Da un utile netto di {a} a una perdita di {b}.", f"From net income of {a} to a net loss of {b}.")
+            txt = t("Da un utile netto di {a} a una perdita di {b}.", "From net income of {a} to a net loss of {b}.", **kw)
         else:
-            txt = t(f"Da una perdita di {a} a un utile netto di {b}.", f"From a net loss of {a} to net income of {b}.")
+            txt = t("Da una perdita di {a} a un utile netto di {b}.", "From a net loss of {a} to net income of {b}.", **kw)
         add(1.6, txt, _pages(m, "net_income"), ["net_income"])
     elif g["revenue"] is not None and g["net_income"] is not None and abs(g["net_income"] - g["revenue"]) > 0.03:
-        faster = g["net_income"] > g["revenue"]
-        ni, rv = pct(g["net_income"], signed=True), pct(g["revenue"], signed=True)
+        kw = dict(ni=pct(g["net_income"], signed=True), rv=pct(g["revenue"], signed=True))
         add(1.2 + abs(g["net_income"] - g["revenue"]) * 3,
-            t(f"L'utile netto ({ni}) cresce {'più' if faster else 'meno'} dei ricavi ({rv}): i margini si stanno {'allargando' if faster else 'restringendo'}.",
-              f"Net income ({ni}) is growing {'faster' if faster else 'slower'} than revenue ({rv}): margins are {'widening' if faster else 'narrowing'}."),
+            t("L'utile netto ({ni}) cresce più dei ricavi ({rv}): i margini si stanno allargando.",
+              "Net income ({ni}) is growing faster than revenue ({rv}): margins are widening.", **kw) if g["net_income"] > g["revenue"] else
+            t("L'utile netto ({ni}) cresce meno dei ricavi ({rv}): i margini si stanno restringendo.",
+              "Net income ({ni}) is growing slower than revenue ({rv}): margins are narrowing.", **kw),
             _pages(m, "net_income", "revenue"), ["net_income", "revenue"])
     if c["operating_margin"] is not None:
         om = pct(c["operating_margin"])
-        txt = t(f"Margine operativo {art(om)}", f"Operating margin of {om}")
         if p["operating_margin"] is not None:
             delta = (c["operating_margin"] - p["operating_margin"]) * 100
-            dd = f"{'+' if delta >= 0 else '−'}{_it(f'{abs(delta):.1f}')}"
-            txt += t(f" ({dd} punti rispetto al periodo di confronto)", f" ({dd} points on the comparative period)")
+            txt = t("Margine operativo {art_m} ({d} punti rispetto al periodo di confronto).", "Operating margin of {m} ({d} points on the comparative period).",
+                    m=om, art_m=art(om), d=f"{'+' if delta >= 0 else '−'}{_it(f'{abs(delta):.1f}')}")
+        else:
+            txt = t("Margine operativo {art_m}.", "Operating margin of {m}.", m=om, art_m=art(om))
         add(1 + abs(c["operating_margin"]) + (abs(c["operating_margin"] - p["operating_margin"]) * 10 if p["operating_margin"] is not None else 0),
-            txt + ".", _pages(m, "operating_income"), ["operating_income"])
+            txt, _pages(m, "operating_income"), ["operating_income"])
     if c["fcf"] is not None:
-        fv = money(c["fcf"], cur)
-        txt = t(f"Free cash flow di {fv}", f"Free cash flow of {fv}")
+        txt = t("Free cash flow di {v}", "Free cash flow of {v}", v=money(c["fcf"], cur))
         if g["fcf"] is not None and (d["prev"]["fcf"] or 0) > 0 and c["fcf"] > 0:
-            txt += t(f" ({pct(g['fcf'], signed=True)} sull'anno)", f" ({pct(g['fcf'], signed=True)} year on year)")
+            txt += t(" ({g} sull'anno)", " ({g} year on year)", g=pct(g["fcf"], signed=True))
         elif d["prev"]["fcf"] is not None:
-            txt += t(f" (era {money(d['prev']['fcf'], cur)})", f" (was {money(d['prev']['fcf'], cur)})")
+            txt += t(" (era {v})", " (was {v})", v=money(d["prev"]["fcf"], cur))
         if c["return_pct_fcf"]:
             rp = pct(c["return_pct_fcf"], 0)
-            txt += t(f"; {art(rp, False)} è tornato agli azionisti tra riacquisti e dividendi",
-                     f"; {rp} went back to shareholders through buybacks and dividends")
-        add(1.5 + (abs(g["fcf"]) if g["fcf"] is not None else 0), txt + ".", _pages(m, "cfo", "capex", "buybacks", "dividends"), ["cfo", "capex"])
+            txt += t("; {art_p} è tornato agli azionisti tra riacquisti e dividendi", "; {p} went back to shareholders through buybacks and dividends",
+                     p=rp, art_p=art(rp, False))
+        add(1.5 + (abs(g["fcf"]) if g["fcf"] is not None else 0), txt + t(".", "."), _pages(m, "cfo", "capex", "buybacks", "dividends"), ["cfo", "capex"])
     if c["fcf"] is not None and _v(m, "net_income") and _v(m, "net_income") > 0:
         conv = c["fcf"] / _v(m, "net_income")
         if conv < 0.7 or conv > 1.3:
             cv = _it(f"{conv:.2f}")
             add(1.3 + abs(conv - 1),
-                t(f"Il free cash flow vale {cv} volte l'utile netto: "
-                  f"{'la cassa generata supera gli utili contabili' if conv > 1 else 'gli utili si convertono in cassa solo in parte'}.",
-                  f"Free cash flow is {cv} times net income: "
-                  f"{'cash generation exceeds reported earnings' if conv > 1 else 'only part of the earnings turns into cash'}."),
+                t("Il free cash flow vale {x} volte l'utile netto: la cassa generata supera gli utili contabili.",
+                  "Free cash flow is {x} times net income: cash generation exceeds reported earnings.", x=cv) if conv > 1 else
+                t("Il free cash flow vale {x} volte l'utile netto: gli utili si convertono in cassa solo in parte.",
+                  "Free cash flow is {x} times net income: only part of the earnings turns into cash.", x=cv),
                 _pages(m, "cfo", "net_income"), ["cfo", "net_income"])
     if c["sbc_pct_fcf"] is not None and c["sbc_pct_fcf"] > 0.15:
         sv, sp = money(_v(m, "sbc"), cur), pct(c["sbc_pct_fcf"], 0)
         add(1 + c["sbc_pct_fcf"] * 2,
-            t(f"I compensi in azioni ({sv}) valgono {art(sp, False)} del free cash flow.",
-              f"Stock-based compensation ({sv}) equals {sp} of free cash flow."), _pages(m, "sbc"), ["sbc"])
+            t("I compensi in azioni ({v}) valgono {art_p} del free cash flow.", "Stock-based compensation ({v}) equals {p} of free cash flow.",
+              v=sv, p=sp, art_p=art(sp, False)), _pages(m, "sbc"), ["sbc"])
     if c["interest_coverage"] is not None:
         ic = c["interest_coverage"]
         iv = _it(f"{ic:.1f}")
         add(0.8 + (1.5 if ic < 3 else 0),
-            t(f"Gli utili ante interessi coprono gli interessi passivi {iv} volte" + (" — copertura stretta." if ic < 3 else "."),
-              f"Earnings before interest cover interest expense {iv} times" + (" — thin coverage." if ic < 3 else ".")),
+            t("Gli utili ante interessi coprono gli interessi passivi {x} volte — copertura stretta.",
+              "Earnings before interest cover interest expense {x} times — thin coverage.", x=iv) if ic < 3 else
+            t("Gli utili ante interessi coprono gli interessi passivi {x} volte.", "Earnings before interest cover interest expense {x} times.", x=iv),
             _pages(m, "interest_expense", "pretax_income"), ["interest_expense"])
     if _v(m, "debt_current") is not None and _v(m, "cash") is not None:
         r = c["cash_vs_debt_due"]
         short = r is not None and r < 1
-        dv, cv = money(_v(m, "debt_current"), cur), money(_v(m, "cash"), cur)
+        kw = dict(d=money(_v(m, "debt_current"), cur), c=money(_v(m, "cash"), cur))
         add(0.9 + (1.5 if short else 0),
-            t(f"Debito in scadenza entro 12 mesi: {dv}, contro una cassa di {cv}" + (" — la cassa non basta a coprirlo." if short else "."),
-              f"Debt due within 12 months: {dv}, against cash of {cv}" + (" — cash does not cover it." if short else ".")),
+            t("Debito in scadenza entro 12 mesi: {d}, contro una cassa di {c} — la cassa non basta a coprirlo.",
+              "Debt due within 12 months: {d}, against cash of {c} — cash does not cover it.", **kw) if short else
+            t("Debito in scadenza entro 12 mesi: {d}, contro una cassa di {c}.", "Debt due within 12 months: {d}, against cash of {c}.", **kw),
             _pages(m, "debt_current", "cash"), ["debt_current", "cash"])
     if c["current_ratio"] is not None:
         cr = c["current_ratio"]
         crv = _it(f"{cr:.2f}")
         add(0.6 + (1.2 if cr < 1 else 0),
-            t(f"Current ratio di {crv}: l'attivo corrente {'copre' if cr >= 1 else 'non copre'} il passivo corrente.",
-              f"Current ratio of {crv}: current assets {'cover' if cr >= 1 else 'do not cover'} current liabilities."),
+            t("Current ratio di {x}: l'attivo corrente copre il passivo corrente.", "Current ratio of {x}: current assets cover current liabilities.", x=crv)
+            if cr >= 1 else
+            t("Current ratio di {x}: l'attivo corrente non copre il passivo corrente.", "Current ratio of {x}: current assets do not cover current liabilities.", x=crv),
             _pages(m, "current_assets", "current_liabilities"), ["current_assets", "current_liabilities"])
     if c["equity_multiplier"] is not None:
         em = c["equity_multiplier"]
         ev = _it(f"{em:.1f}")
         add(0.5 + (1 if em > 4 else 0),
-            t(f"Moltiplicatore del capitale di {ev}x (attivo / patrimonio netto)" + (": bilancio molto a leva." if em > 4 else "."),
-              f"Equity multiplier of {ev}x (assets / equity)" + (": a highly leveraged balance sheet." if em > 4 else ".")),
+            t("Moltiplicatore del capitale di {x}x (attivo / patrimonio netto): bilancio molto a leva.",
+              "Equity multiplier of {x}x (assets / equity): a highly leveraged balance sheet.", x=ev) if em > 4 else
+            t("Moltiplicatore del capitale di {x}x (attivo / patrimonio netto).", "Equity multiplier of {x}x (assets / equity).", x=ev),
             _pages(m, "total_assets", "equity"), ["total_assets", "equity"])
     if c["rnd_ratio"] is not None and c["rnd_ratio"] > 0.05:
         rr, rv = pct(c["rnd_ratio"]), money(_v(m, "rnd"), cur)
         add(0.7 + c["rnd_ratio"],
-            t(f"Spende {art(rr, False)} dei ricavi in ricerca e sviluppo ({rv}).", f"Spends {rr} of revenue on research and development ({rv})."),
+            t("Spende {art_p} dei ricavi in ricerca e sviluppo ({v}).", "Spends {p} of revenue on research and development ({v}).", p=rr, art_p=art(rr, False), v=rv),
             _pages(m, "rnd"), ["rnd"])
     if g["eps_diluted"] is not None and (_v(m, "eps_diluted") or 0) > 0 and (_v(m, "eps_diluted", "prev") or 0) > 0:
-        ev, eg = _ps(_v(m, "eps_diluted"), cur), pct(g["eps_diluted"], signed=True)
-        add(0.9 + abs(g["eps_diluted"]) * 2, t(f"EPS diluito a {ev} ({eg}).", f"Diluted EPS of {ev} ({eg})."), _pages(m, "eps_diluted"), ["eps_diluted"])
+        add(0.9 + abs(g["eps_diluted"]) * 2, t("EPS diluito a {v} ({g}).", "Diluted EPS of {v} ({g}).", v=_ps(_v(m, "eps_diluted"), cur), g=pct(g["eps_diluted"], signed=True)),
+            _pages(m, "eps_diluted"), ["eps_diluted"])
     out.sort(key=lambda x: -x[0])
     return [f for _, f in out]
 
@@ -574,7 +589,7 @@ def card(m: dict, d: dict, cur: str, vs: str = "") -> list[dict]:
             # a growth rate between negative numbers misleads: show the comparative value instead
             gr = None
             prev_display = fmt_ps(pv, cur) if key == "eps_diluted" else fmt_money(pv, cur)
-        tiles.append({"key": key, "it": it, "en": en, "value": v, "display": disp, "exact": fmt_exact(v, cur) if key != "eps_diluted" else "",
+        tiles.append({"key": key, "it": it, "en": en, "label": t(it, en), "value": v, "display": disp, "exact": fmt_exact(v, cur) if key != "eps_diluted" else "",
                       "yoy": gr, "yoy_display": fmt_pct(gr, signed=True) if gr is not None else "", "prev_display": prev_display,
                       "vs": vs if (gr is not None or prev_display) else "", "note": note, "pages": pages})
     return tiles

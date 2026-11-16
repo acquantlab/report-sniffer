@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import ai, financials as F, generic, ixbrl, market, reader, sources, statements, tables
-from .i18n import lang, system_lang, t, ui, using
+from .i18n import LANGS, fmt_date, lang, system_lang, t, ui, using
 
 DOCS = sources.CACHE / "docs"
 Progress = Callable[[str, float], None]
@@ -41,7 +41,7 @@ html,body{margin:0;background:transparent}
 
 
 # bumped whenever the reading changes, so documents read by older code are read again
-PIPELINE_VERSION = 7
+PIPELINE_VERSION = 8
 
 
 def _id(*parts) -> str:
@@ -123,7 +123,7 @@ def from_ixbrl(data: bytes, url: str, meta: dict, use_ai: bool, progress: Progre
         fq, fy = str(doc.info.get("DocumentFiscalPeriodFocus") or "").upper(), str(doc.info.get("DocumentFiscalYearFocus") or "")
         if months == 3 and re.fullmatch(r"Q[1-4]", fq) and re.fullmatch(r"\d{4}", fy):
             # the issuer's own name for the quarter (dei tags): "Q3 FY2026" against "Q3 FY2025"
-            y_cur, y_prev = (t(f"{fq[1]}° trim. es. {int(fy) - k}", f"{fq} FY{int(fy) - k}") for k in (0, 1))
+            y_cur, y_prev = (t("{q}° trim. es. {y}", "Q{q} FY{y}", q=fq[1], y=int(fy) - k) for k in (0, 1))
     finds = F.findings(m, d, cur, period=y_cur, vs=y_prev)
     card = F.card(m, d, cur, vs=y_prev)
 
@@ -164,9 +164,7 @@ def from_ixbrl(data: bytes, url: str, meta: dict, use_ai: bool, progress: Progre
 
     company = doc.info.get("EntityRegistrantName") or doc.info.get("NameOfReportingEntityOrOtherMeansOfIdentification") or meta.get("company", "")
     form = doc.info.get("DocumentType") or meta.get("form", "")
-    mn = market.months()
-    period = (t(f"{per.end.day} {mn[per.end.month - 1]} {per.end.year}", f"{mn[per.end.month - 1]} {per.end.day}, {per.end.year}")
-              if per.end else doc.info.get("DocumentPeriodEndDate", ""))
+    period = fmt_date(per.end) if per.end else doc.info.get("DocumentPeriodEndDate", "")
     reading = None
     if use_ai and ai.available():
         progress(_reading_step(), 0.65)
@@ -190,10 +188,10 @@ def from_ixbrl(data: bytes, url: str, meta: dict, use_ai: bool, progress: Progre
     a = {
         "id": meta["id"], "kind": "ixbrl",
         "title": company or t("Documento", "Document"),
-        "subtitle": " · ".join(x for x in (form, t(f"periodo chiuso il {period}", f"period ended {period}") if period else "", meta.get("source_label", "")) if x),
+        "subtitle": " · ".join(x for x in (form, t("periodo chiuso il {d}", "period ended {d}", d=period) if period else "", meta.get("source_label", "")) if x),
         "source": meta.get("url", url),
         "currency": cur,
-        "pages": [{"n": p, "title": next((h["text"] for h in doc.headings if h["page"] == p), t(f"Pagina {p}", f"Page {p}"))} for p in shown],
+        "pages": [{"n": p, "title": next((h["text"] for h in doc.headings if h["page"] == p), t("Pagina {n}", "Page {n}", n=p))} for p in shown],
         "total_pages": len(doc.pages),
         "cols": cols, "rows": rows, "facts": facts, "total_facts": len(doc.facts),
         "headings": [h for h in doc.headings if h["page"] in shown],
@@ -208,8 +206,7 @@ def from_ixbrl(data: bytes, url: str, meta: dict, use_ai: bool, progress: Progre
 
 
 def _reading_step() -> str:
-    return ui(f"{ai.provider_name()} legge il documento (può richiedere un minuto)",
-              f"{ai.provider_name()} is reading the document (this can take a minute)")
+    return ui("{ai} legge il documento (può richiedere un minuto)", "{ai} is reading the document (this can take a minute)", ai=ai.provider_name())
 
 
 def _ai_warning(e: Exception) -> str:
@@ -290,7 +287,7 @@ def from_market(symbol: str, meta: dict, progress: Progress, use_ai: bool = Fals
     view = view_html([{"n": i + 1, "html": f'<div class="sheet">{h}</div>'} for i, h in enumerate(r["pages"])], market.CSS)
     finds, ai_used, warns = r["findings"], False, []
     if use_ai and ai.available():
-        progress(ui(f"{ai.provider_name()} commenta i dati", f"{ai.provider_name()} is commenting on the data"), 0.8)
+        progress(ui("{ai} commenta i dati", "{ai} is commenting on the data", ai=ai.provider_name()), 0.8)
         data = {str(f["id"]): {"label": f["label"], "display": f["display"], "pages": [f["page"]]} for f in r["facts"]}
         try:
             obs = ai.observations(f"{r['title']} — {r['subtitle']}", data)
@@ -302,7 +299,7 @@ def from_market(symbol: str, meta: dict, progress: Progress, use_ai: bool = Fals
     a = {
         "id": meta["id"], "kind": "market", "title": r["title"], "subtitle": r["subtitle"] + t(" · fonte ", " · source ") + hist.get("source", "Yahoo Finance"),
         "source": f"https://finance.yahoo.com/quote/{symbol}" if hist.get("source", "Yahoo Finance") == "Yahoo Finance" else f"https://exchange.coinbase.com/trade/{hist['symbol']}", "currency": r["currency"],
-        "pages": [{"n": p, "title": titles.get(p, t(f"Pagina {p}", f"Page {p}"))} for p in range(1, n + 1)], "total_pages": n,
+        "pages": [{"n": p, "title": titles.get(p, t("Pagina {n}", "Page {n}", n=p))} for p in range(1, n + 1)], "total_pages": n,
         "cols": cols, "rows": rows, "facts": facts, "total_facts": len(r["facts"]), "headings": r["headings"],
         "findings": finds[:6], "card": r["card"], "card_findings": finds[:3], "checks": r["checks"],
         "warnings": warns, "ai": ai_used, "ai_provider": ai.provider_name() if ai_used else "", "series": r["series"],
@@ -366,14 +363,14 @@ def from_generic(data: bytes, name: str, url: Optional[str], meta: dict, use_ai:
             facts[fid].update(label=reading["figures"][i]["label"], key=True)
     finds = reading.get("findings") or []
     form = _form_of(g.get("all_text") or g["page_text"]) or meta.get("form", "")
-    kind_label = reading.get("doc_type") or (t(f"Modulo {form}", f"Form {form}") if form else t("Documento", "Document"))
-    pages_note = t(f"{g['total_pages']} pagine", f"{g['total_pages']} pages")
+    kind_label = reading.get("doc_type") or (t("Modulo {f}", "Form {f}", f=form) if form else t("Documento", "Document"))
+    pages_note = t("{n} pagine", "{n} pages", n=g["total_pages"])
     how = t("letto da ", "read by ") + ai.provider_name() if ai_used else t("estrazione euristica", "heuristic extraction")
     common = {"id": meta["id"], "kind": "pdf" if is_pdf else "html", "title": title,
               "subtitle": " · ".join(x for x in (kind_label, pages_note, how) if x),
               "source": url or name, "total_pages": g["total_pages"], "total_facts": len(g["facts"]),
               "headings": g["headings"], "facts": facts,
-              "pages": [{"n": p["n"], "title": next((h["text"] for h in g["headings"] if h["page"] == p["n"]), t(f"Pagina {p['n']}", f"Page {p['n']}"))} for p in g["pages"]],
+              "pages": [{"n": p["n"], "title": next((h["text"] for h in g["headings"] if h["page"] == p["n"]), t("Pagina {n}", "Page {n}", n=p["n"]))} for p in g["pages"]],
               "warnings": meta.get("warnings", []) + ([] if ai_used or not use_ai or ai.available() else
                                                       [t("Nessuna AI configurata: cifre scelte con regole euristiche.", "No AI configured: figures chosen by heuristic rules.")]),
               "ai": ai_used, "ai_provider": ai.provider_name() if ai_used else "", "reading": _public(reading),
@@ -404,10 +401,10 @@ def from_generic(data: bytes, name: str, url: Optional[str], meta: dict, use_ai:
         sorted((f for f in g["facts"] if f["score"] >= 3), key=lambda f: -f["score"])
     if not finds:
         finds = [{"text": f"{facts[f['id']]['label']}: {f['display']}.", "pages": [f["page"]]} for f in keyed[:6]]
-    card = [{"key": str(f["id"]), "it": _short(facts[f["id"]]["label"]), "en": "", "display": f["display"], "yoy_display": "", "pages": [f["page"]]}
+    card = [{"key": str(f["id"]), "it": _short(facts[f["id"]]["label"]), "en": "", "label": _short(facts[f["id"]]["label"]), "display": f["display"], "yoy_display": "", "pages": [f["page"]]}
             for f in keyed[:4]]
     if not card and ai_used:          # figures read by the AI on pages that are not shown
-        card = [{"key": f"f{i}", "it": _short(g2["label"]), "en": "", "display": g2["value"], "yoy_display": "", "pages": [g2["page"]]}
+        card = [{"key": f"f{i}", "it": _short(g2["label"]), "en": "", "label": _short(g2["label"]), "display": g2["value"], "yoy_display": "", "pages": [g2["page"]]}
                 for i, g2 in enumerate(reading["figures"][:4])]
     rows, cols = {}, {}
     for p in g["pages"]:
@@ -539,7 +536,7 @@ def is_ixbrl(data: bytes) -> bool:
 
 def run(req: dict, progress: Progress) -> dict:
     """req: {"kind": "sec"|"esef"|"market"|"url"|"upload"|"upload_ref", "lang": "it"|"en", ...}"""
-    lang = req.get("lang") if req.get("lang") in ("it", "en") else system_lang()
+    lang = req.get("lang") if req.get("lang") in LANGS else system_lang()
     if req["kind"] == "upload":
         # keep the file so the report can be rebuilt in the other language
         sha = hashlib.sha256(req["data"]).hexdigest()
@@ -583,7 +580,7 @@ def _run(req: dict, data: Optional[bytes], lang: str, progress: Progress) -> dic
         aid = _id("sec", f["url"], use_ai, lang)
         if (hit := load(aid)) and not req.get("refresh"):
             return hit
-        progress(ui(f"Scarico il {f.get('form') or 'documento'} da sec.gov", f"Downloading the {f.get('form') or 'document'} from sec.gov"), 0.18)
+        progress(ui("Scarico il {f} da sec.gov", "Downloading the {f} from sec.gov", f=f.get("form") or ui("documento", "document")), 0.18)
         data = sources.fetch(f["url"], ttl=None)
         meta = {"id": aid, "url": f["url"], "form": f.get("form", ""), "company": f.get("company", ""), "source_label": "SEC EDGAR"}
         if is_ixbrl(data):
@@ -627,7 +624,7 @@ def _run(req: dict, data: Optional[bytes], lang: str, progress: Progress) -> dic
         if is_ixbrl(data):
             return from_ixbrl(data, None, meta, use_ai, progress)
         return from_generic(data, req.get("name", "documento"), None, meta, use_ai, progress)
-    raise sources.SourceError(ui(f"Tipo di richiesta sconosciuto: {kind}", f"Unknown request type: {kind}"))
+    raise sources.SourceError(ui("Tipo di richiesta sconosciuto: {k}", "Unknown request type: {k}", k=kind))
 
 
 def _today() -> str:

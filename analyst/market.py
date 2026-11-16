@@ -12,18 +12,21 @@ import math
 from datetime import date
 
 from .financials import _it, art, fmt_pct
-from .i18n import lang, t
+from .i18n import fmt_date, fmt_month, months as _months, t
 
-MONTHS = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
-MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-TYPE_IT = {"CRYPTOCURRENCY": "Criptovaluta", "EQUITY": "Azione", "ETF": "ETF", "MUTUALFUND": "Fondo", "INDEX": "Indice",
-           "CURRENCY": "Valuta", "FUTURE": "Future / materia prima", "MONEYMARKET": "Monetario"}
-TYPE_EN = {"CRYPTOCURRENCY": "Cryptocurrency", "EQUITY": "Stock", "ETF": "ETF", "MUTUALFUND": "Fund", "INDEX": "Index",
-           "CURRENCY": "Currency", "FUTURE": "Future / commodity", "MONEYMARKET": "Money market"}
+
+
+def instrument_type(key: str) -> str:
+    """Yahoo's quote type in the report language, or "" when unknown."""
+    return {"CRYPTOCURRENCY": lambda: t("Criptovaluta", "Cryptocurrency"), "EQUITY": lambda: t("Azione", "Stock"), "ETF": lambda: "ETF",
+            "MUTUALFUND": lambda: t("Fondo", "Fund"), "INDEX": lambda: t("Indice", "Index"), "CURRENCY": lambda: t("Valuta", "Currency"),
+            "FUTURE": lambda: t("Future / materia prima", "Future / commodity"),
+            "MONEYMARKET": lambda: t("Monetario", "Money market")}.get(key, lambda: "")()
 
 
 def months() -> list[str]:
-    return MONTHS_EN if lang() == "en" else MONTHS
+    """Month abbreviations in the report language."""
+    return _months()
 
 
 def _price(v: float, cur: str = "") -> str:
@@ -128,7 +131,7 @@ def build(hist: dict, now: date | None = None) -> dict:
     cur = hist.get("currency", "")
     name, sym = hist.get("name") or hist["symbol"], hist["symbol"]
     tkey = (hist.get("type") or "").upper()
-    typ = (TYPE_EN if lang() == "en" else TYPE_IT).get(tkey, hist.get("type") or t("Strumento", "Instrument"))
+    typ = instrument_type(tkey) or hist.get("type") or t("Strumento", "Instrument")
     S = Sheet()
     last_d, last_v = pts[-1]
     rets = _returns(pts)
@@ -185,12 +188,13 @@ def build(hist: dict, now: date | None = None) -> dict:
     MN = months()
 
     def mlabel(m):
-        return f"{MN[int(m[5:7]) - 1]} {m[:4]}"
+        return fmt_month(int(m[5:7]), int(m[:4]))
 
     def dlabel(d):
-        if lang() == "en":
-            return f"{MN[int(d[5:7]) - 1]} {int(d[8:10])}, {d[:4]}"
-        return f"{int(d[8:10])} {MN[int(d[5:7]) - 1]} {d[:4]}"
+        return fmt_date(date.fromisoformat(d))
+
+    def ret(what):                         # "Return 1 year", "Return 2024", "Return Jun 2024"
+        return t("Rendimento {x}", "Return {x}", x=what)
 
     pc = lambda v: fmt_pct(v, 1, signed=True)
     cls = lambda v: "pos" if v is not None and v >= 0 else "neg"
@@ -206,17 +210,17 @@ def build(hist: dict, now: date | None = None) -> dict:
     if ytd is not None:
         rows.append((t("Da inizio anno", "Year to date"), S.f(L_YTD, ytd, pc(ytd), cls=cls(ytd))))
     for key, (lab, tot, ann) in horizon.items():
-        cell = S.f(f"{RET} {lab}", tot, pc(tot), cls=cls(tot))
+        cell = S.f(ret(lab), tot, pc(tot), cls=cls(tot))
         if ann is not None and key != "1y":
-            cell += f' <small>({t("annuo", "annualised")} {S.f(t(f"Rendimento annuo {lab}", f"Annualised return {lab}"), ann, pc(ann), cls=cls(ann))})</small>'
-        rows.append((f"{RET} {lab}", cell))
+            cell += f' <small>({t("annuo", "annualised")} {S.f(t("Rendimento annuo {x}", "Annualised return {x}", x=lab), ann, pc(ann), cls=cls(ann))})</small>'
+        rows.append((ret(lab), cell))
     rows.append((t("Massimo 52 settimane", "52-week high"), S.f(t("Massimo 52 settimane", "52-week high"), hi52, _price(hi52, cur), "price")))
     rows.append((t("Minimo 52 settimane", "52-week low"), S.f(t("Minimo 52 settimane", "52-week low"), lo52, _price(lo52, cur), "price")))
     rows.append((t("Massimo storico", "All-time high"), S.f(t("Massimo storico", "All-time high"), ath_v, _price(ath_v, cur), "price") + f" <small>({dlabel(ath_d)})</small>"))
     rows.append((t("Distanza dal massimo", "From the high"), S.f(L_ATHD, from_ath, pc(from_ath), cls=cls(from_ath))))
     n_obs = _it(f"{len(pts):,}")
-    sub = t(f"Dati giornalieri dal {dlabel(pts[0][0])} al {dlabel(last_d)} · {n_obs} osservazioni · valuta {cur or 'n.d.'}",
-            f"Daily data from {dlabel(pts[0][0])} to {dlabel(last_d)} · {n_obs} observations · currency {cur or 'n/a'}")
+    sub = t("Dati giornalieri dal {a} al {b} · {n} osservazioni · valuta {cur}", "Daily data from {a} to {b} · {n} observations · currency {cur}",
+            a=dlabel(pts[0][0]), b=dlabel(last_d), n=n_obs, cur=cur or t("n.d.", "n/a"))
     p1 = (f'<div class="kicker">{t("Scheda di mercato", "Market sheet")} · {html.escape(typ)} · {html.escape(hist.get("exchange") or "")}</div>'
           + S.h(f"{name} ({sym})", "h1")
           + f'<p class="sub">{html.escape(sub)}</p>'
@@ -230,7 +234,7 @@ def build(hist: dict, now: date | None = None) -> dict:
     S.page = 2
     part = t("parziale", "partial")
     trs = "".join(
-        f"<tr><td>{y}{f' <small>({part})</small>' if partial else ''}</td><td class='num'>{S.f(f'{RET} {y}', r, pc(r), col=t('Anno', 'Year'), cls=cls(r))}</td></tr>"
+        f"<tr><td>{y}{f' <small>({part})</small>' if partial else ''}</td><td class='num'>{S.f(ret(y), r, pc(r), col=t('Anno', 'Year'), cls=cls(r))}</td></tr>"
         for y, r, partial in reversed(annual))
     p2 = (S.h(t("Rendimenti per anno solare", "Calendar-year returns"), "h1")
           + f"<table><tr><th>{t('Anno', 'Year')}</th><th class='num'>{RET}</th></tr>" + trs + "</table>")
@@ -247,14 +251,14 @@ def build(hist: dict, now: date | None = None) -> dict:
             key = f"{y}-{k:02d}"
             if key in monthly:
                 v = monthly[key]
-                cells += f"<td class='num'>{S.f(f'{RET} {mlabel(key)}', v, fmt_pct(v, 1, True), col=t('Mese', 'Month'), cls=cls(v))}</td>"
+                cells += f"<td class='num'>{S.f(ret(mlabel(key)), v, fmt_pct(v, 1, True), col=t('Mese', 'Month'), cls=cls(v))}</td>"
             else:
                 cells += "<td></td>"
         body += f"<tr><td>{y}</td>{cells}</tr>"
     p3 = S.h(t("Rendimenti mensili", "Monthly returns"), "h1") + f"<table class='grid'>{head}{body}</table>"
     if pos_months is not None:
         L_POS, L_BM, L_WM = t("Mesi positivi", "Positive months"), t("Mese migliore", "Best month"), t("Mese peggiore", "Worst month")
-        p3 += (f"<p>{L_POS}: {S.f(L_POS, pos_months, fmt_pct(pos_months, 0))} {t('su', 'of')} {len(monthly)}. "
+        p3 += ("<p>" + t("{label}: {p} su {n}.", "{label}: {p} of {n}.", label=L_POS, p=S.f(L_POS, pos_months, fmt_pct(pos_months, 0)), n=len(monthly)) + " "
                f"{L_BM}: {mlabel(best_m[0])} ({S.f(L_BM, best_m[1], pc(best_m[1]), cls='pos')}); "
                f"{t('peggiore', 'worst')}: {mlabel(worst_m[0])} ({S.f(L_WM, worst_m[1], pc(worst_m[1]), cls='neg')}).</p>")
     pages.append(p3)
@@ -275,9 +279,9 @@ def build(hist: dict, now: date | None = None) -> dict:
     risk_rows.append((L_WD, f"{dlabel(worst_day[0])}: " + S.f(L_WD, worst_day[1], pc(worst_day[1]), cls="neg")))
     risk_rows.append((L_BD, f"{dlabel(best_day[0])}: " + S.f(L_BD, best_day[1], pc(best_day[1]), cls="pos")))
     note = t("Rendimenti calcolati sui prezzi di chiusura rettificati (dividendi e frazionamenti inclusi quando disponibili). "
-             f"La volatilità usa i rendimenti logaritmici giornalieri. Fonte: {hist.get('source', 'Yahoo Finance')}.",
+             "La volatilità usa i rendimenti logaritmici giornalieri. Fonte: {src}.",
              "Returns use adjusted closing prices (dividends and splits included where available). "
-             f"Volatility uses daily log returns. Source: {hist.get('source', 'Yahoo Finance')}.")
+             "Volatility uses daily log returns. Source: {src}.", src=hist.get("source", "Yahoo Finance"))
     p4 = (S.h(t("Rischio", "Risk"), "h1") + S.h(t("Drawdown dal massimo precedente", "Drawdown from the previous high"))
           + _svg_line(dd_series, color="#c0392b", zero=True, fmt=lambda v: fmt_pct(v, 0))
           + "<table>" + "".join(f"<tr><td>{a}</td><td class='num'>{b}</td></tr>" for a, b in risk_rows) + "</table>"
@@ -289,42 +293,49 @@ def build(hist: dict, now: date | None = None) -> dict:
     if "1y" in horizon:
         r1 = horizon["1y"][1]
         pv = fmt_pct(abs(r1))
-        finds.append({"text": t(f"{sym} {'ha guadagnato' if r1 >= 0 else 'ha perso'} {art(pv, False)} nell'ultimo anno.",
-                                f"{sym} {'gained' if r1 >= 0 else 'lost'} {pv} over the last year."), "pages": [1]})
+        kw = dict(sym=sym, p=pv, art_p=art(pv, False))
+        finds.append({"text": t("{sym} ha guadagnato {art_p} nell'ultimo anno.", "{sym} gained {p} over the last year.", **kw) if r1 >= 0 else
+                      t("{sym} ha perso {art_p} nell'ultimo anno.", "{sym} lost {p} over the last year.", **kw), "pages": [1]})
     if vol is not None:
         vv = fmt_pct(vol)
-        finds.append({"text": t(f"Volatilità annualizzata {art(vv)}" + (": oscillazioni molto ampie." if vol > 0.5 else "."),
-                                f"Annualised volatility of {vv}" + (": very wide swings." if vol > 0.5 else ".")), "pages": [4]})
+        kw = dict(v=vv, art_v=art(vv))
+        finds.append({"text": t("Volatilità annualizzata {art_v}: oscillazioni molto ampie.", "Annualised volatility of {v}: very wide swings.", **kw) if vol > 0.5 else
+                      t("Volatilità annualizzata {art_v}.", "Annualised volatility of {v}.", **kw), "pages": [4]})
     wv, span = fmt_pct(abs(worst)), f"{dlabel(dd_peak)} → {dlabel(dd_trough)}"
-    finds.append({"text": t(f"Il calo massimo dal picco è stato {art(wv)} ({span}), " + (f"recuperato il {dlabel(recovered)}." if recovered else "non ancora recuperato."),
-                            f"The largest fall from a peak was {wv} ({span}), " + (f"recovered on {dlabel(recovered)}." if recovered else "not yet recovered.")),
+    kw = dict(w=wv, art_w=art(wv), span=span, when=dlabel(recovered) if recovered else "")
+    finds.append({"text": t("Il calo massimo dal picco è stato {art_w} ({span}), recuperato il {when}.",
+                            "The largest fall from a peak was {w} ({span}), recovered on {when}.", **kw) if recovered else
+                  t("Il calo massimo dal picco è stato {art_w} ({span}), non ancora recuperato.",
+                    "The largest fall from a peak was {w} ({span}), not yet recovered.", **kw),
                   "pages": [4]})
     if from_ath < -0.05:
         av = fmt_pct(abs(from_ath))
-        finds.append({"text": t(f"Il prezzo è inferiore {art(av)} al massimo storico ({dlabel(ath_d)}).",
-                                f"The price is {av} below its all-time high ({dlabel(ath_d)})."), "pages": [1]})
+        finds.append({"text": t("Il prezzo è inferiore {art_p} al massimo storico ({d}).", "The price is {p} below its all-time high ({d}).",
+                                p=av, art_p=art(av), d=dlabel(ath_d)), "pages": [1]})
     else:
-        finds.append({"text": t(f"Il prezzo è vicino al massimo storico ({dlabel(ath_d)}).", f"The price is close to its all-time high ({dlabel(ath_d)})."), "pages": [1]})
+        finds.append({"text": t("Il prezzo è vicino al massimo storico ({d}).", "The price is close to its all-time high ({d}).", d=dlabel(ath_d)), "pages": [1]})
     if best_y:
-        finds.append({"text": t(f"Anno migliore {best_y[0]} ({pc(best_y[1])}), peggiore {worst_y[0]} ({pc(worst_y[1])}).",
-                                f"Best year {best_y[0]} ({pc(best_y[1])}), worst {worst_y[0]} ({pc(worst_y[1])})."), "pages": [2]})
+        finds.append({"text": t("Anno migliore {by} ({br}), peggiore {wy} ({wr}).", "Best year {by} ({br}), worst {wy} ({wr}).",
+                                by=best_y[0], br=pc(best_y[1]), wy=worst_y[0], wr=pc(worst_y[1])), "pages": [2]})
     if pos_months is not None:
-        finds.append({"text": t(f"Mesi in positivo: {fmt_pct(pos_months, 0)} su {len(monthly)} mesi osservati.",
-                                f"Positive months: {fmt_pct(pos_months, 0)} of {len(monthly)} observed."), "pages": [3]})
+        finds.append({"text": t("Mesi in positivo: {p} su {n} mesi osservati.", "Positive months: {p} of {n} observed.",
+                                p=fmt_pct(pos_months, 0), n=len(monthly)), "pages": [3]})
     for k in ("5y", "10y"):
         if k in horizon and horizon[k][2] is not None:
-            finds.append({"text": t(f"Rendimento annuo composto a {horizon[k][0]}: {pc(horizon[k][2])}.",
-                                    f"Compound annual return over {horizon[k][0]}: {pc(horizon[k][2])}."), "pages": [1]})
+            finds.append({"text": t("Rendimento annuo composto a {h}: {r}.", "Compound annual return over {h}: {r}.",
+                                    h=horizon[k][0], r=pc(horizon[k][2])), "pages": [1]})
             break
 
-    tiles = [{"key": "price", "it": "Ultimo prezzo", "en": "Last price", "display": _price(last_v, cur), "yoy_display": "", "pages": [1]}]
+    def tile(key, it, en, display, pages):
+        return {"key": key, "it": it, "en": en, "label": t(it, en), "display": display, "yoy_display": "", "pages": pages}
+    tiles = [tile("price", "Ultimo prezzo", "Last price", _price(last_v, cur), [1])]
     if "1y" in horizon:
-        tiles.append({"key": "r1y", "it": "Rendimento 1 anno", "en": "1-year return", "display": pc(horizon["1y"][1]), "yoy_display": "", "pages": [1]})
+        tiles.append(tile("r1y", "Rendimento 1 anno", "1-year return", pc(horizon["1y"][1]), [1]))
     if vol is not None:
-        tiles.append({"key": "vol", "it": "Volatilità annua", "en": "Volatility", "display": fmt_pct(vol), "yoy_display": "", "pages": [4]})
-    tiles.append({"key": "mdd", "it": "Max drawdown", "en": "Max drawdown", "display": pc(worst), "yoy_display": "", "pages": [4]})
+        tiles.append(tile("vol", "Volatilità annua", "Volatility", fmt_pct(vol), [4]))
+    tiles.append(tile("mdd", "Max drawdown", "Max drawdown", pc(worst), [4]))
 
-    key_labels = {L_PRICE, f"{RET} {t('1 anno', '1 year')}", L_VOL, L_MDD, L_YTD, L_ATHD}
+    key_labels = {L_PRICE, ret(t('1 anno', '1 year')), L_VOL, L_MDD, L_YTD, L_ATHD}
     for f in S.facts:
         f["key"] = f["label"] in key_labels
     checks = [{"name": t("Prezzi giornalieri senza buchi oltre 10 giorni", "Daily prices with no gap over 10 days"), "ok": _gaps_ok(pts), "pages": [1], "detail": ""},
@@ -332,7 +343,7 @@ def build(hist: dict, now: date | None = None) -> dict:
                "ok": _months_consistent(annual, monthly), "pages": [2, 3], "detail": ""}]
     return {
         "title": f"{name} ({sym})",
-        "subtitle": t(f"{typ} · scheda di mercato al {dlabel(last_d)}", f"{typ} · market sheet as of {dlabel(last_d)}"),
+        "subtitle": t("{typ} · scheda di mercato al {d}", "{typ} · market sheet as of {d}", typ=typ, d=dlabel(last_d)),
         "currency": cur,
         "pages": pages,
         "facts": S.facts,

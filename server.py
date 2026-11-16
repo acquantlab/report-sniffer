@@ -4,6 +4,7 @@ Listens on localhost only. Long analyses run as background jobs the page polls.
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import os
 import re
@@ -20,7 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from analyst import ai, pdfreport, pipeline, pptx_report, sources, xlsx_export
-from analyst.i18n import system_lang, ui
+from analyst.i18n import LANGS, NATIVE, set_ui, system_lang, ui, ui_lang, using_ui
 
 ROOT = Path(__file__).resolve().parent
 WEB = ROOT / "web"
@@ -34,6 +35,7 @@ jobs: dict[str, dict] = {}
 jobs_lock = threading.Lock()
 JOB_TTL = 3600                      # finished jobs are forgotten after an hour
 
+UI_COOKIE = "sniffer_ui"
 LOCAL_ORIGINS = {f"http://{h}:{PORT}" for h in ("127.0.0.1", "localhost", "[::1]")}
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -63,6 +65,8 @@ async def local_only(request: Request, call_next):
     # CSRF guard: only the app's own page may call the API
     if cross_site(request):
         return Response("forbidden: cross-site request", status_code=403)
+    # the interface language chosen in the page (else the system's): messages and progress steps follow it
+    set_ui(request.cookies.get(UI_COOKIE, ""))
     return await call_next(request)
 
 
@@ -95,7 +99,7 @@ def _version() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index():
-    html = (WEB / "index.html").read_text(encoding="utf-8").replace("__V__", _version()).replace("__UI__", system_lang())
+    html = (WEB / "index.html").read_text(encoding="utf-8").replace("__V__", _version()).replace("__UI__", ui_lang())
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
@@ -106,7 +110,8 @@ def status():
     cfg = sources.config()
     return {"ai": ai.available(), "ai_name": ai.provider_name(), "ai_providers": ai.status(), "sec_user_agent": sources.sec_user_agent(),
             "sec_ua_custom": bool(os.environ.get("SNIFFER_SEC_UA") or cfg.get("sec_user_agent")),
-            "model": ai.MODEL, "ui_lang": system_lang()}
+            "model": ai.MODEL, "ui_lang": ui_lang(), "system_lang": system_lang(),
+            "langs": [{"code": c, "name": NATIVE[c]} for c in LANGS]}
 
 
 @app.post("/api/settings")
@@ -171,7 +176,7 @@ def search(q: str):
         return {"sec": [], "esef": [], "market": [], "errors": []}
     out, errors = {"sec": [], "esef": [], "market": []}, []
     tasks = {"sec": lambda: sources.sec_search(q), "esef": lambda: sources.esef_entities(q, 6), "market": lambda: sources.yahoo_search(q)}
-    futs = {k: pool.submit(f) for k, f in tasks.items()}
+    futs = {k: pool.submit(contextvars.copy_context().run, f) for k, f in tasks.items()}      # errors in the interface language
     names = {"sec": "SEC EDGAR", "esef": "filings.xbrl.org", "market": "Yahoo Finance"}
     for k, fut in futs.items():
         try:
@@ -219,6 +224,8 @@ def _start(req: dict) -> str:
     def progress(step: str, p: float):
         job["step"], job["progress"] = step, p
 
+    lang_ui = ui_lang()                  # progress steps and errors in the language of the page that asked
+
     def work():
         try:
             a = pipeline.relang(req["id"], req["lang"], progress) if req["kind"] == "relang" else pipeline.run(req, progress)
@@ -227,7 +234,11 @@ def _start(req: dict) -> str:
             job.update(status="error", error=str(e))
         except Exception as e:  # keep the server alive; show the reason
             job.update(status="error", error=ui("Errore imprevisto: ", "Unexpected error: ") + f"{type(e).__name__}: {e}")
-    pool.submit(work)
+
+    def run():
+        with using_ui(lang_ui):
+            work()
+    pool.submit(run)
     return jid
 
 
@@ -248,14 +259,14 @@ async def analyze(request: Request):
 async def relang(request: Request):
     body = await json_body(request)
     lang = body.get("lang")
-    if lang not in ("it", "en") or not re.fullmatch(r"[0-9a-f]{16}", str(body.get("id", ""))):
+    if lang not in LANGS or not re.fullmatch(r"[0-9a-f]{16}", str(body.get("id", ""))):
         raise HTTPException(400, ui("richiesta non valida", "invalid request"))
     _need_ai()
     return {"job": _start({"kind": "relang", "id": body["id"], "lang": lang})}
 
 
 @app.post("/api/upload")
-async def upload(file: UploadFile = File(...), lang: str = Form("it")):
+async def upload(file: UploadFile = File(...), lang: str = Form("")):
     _need_ai()
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:

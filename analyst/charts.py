@@ -446,9 +446,9 @@ def financial_section(a: dict, width: float, h3) -> list:
                                                          ("net_income", t("Utile netto", "Net income")), ("cfo", t("Cassa operativa", "Operating CF")))
              if val(k) is not None]
     if d["cur"].get("fcf") is not None:
-        items.append(("Free cash flow", d["cur"]["fcf"], d["prev"].get("fcf")))
+        items.append((t("Free cash flow", "Free cash flow"), d["cur"]["fcf"], d["prev"].get("fcf")))
     if len(items) >= 2:
-        out += [KeepTogether([h3(t(f"Risultati: {years[0]} e {years[1]}", f"Results: {years[0]} vs {years[1]}")),
+        out += [KeepTogether([h3(t("Risultati: {a} e {b}", "Results: {a} vs {b}", a=years[0], b=years[1])),
                               GroupedBars(width, 150, items, years, money)]), Spacer(1, 6)]
 
     margins = [(lbl, d["cur"].get(k), d["prev"].get(k)) for k, lbl in (
@@ -491,8 +491,8 @@ def financial_section(a: dict, width: float, h3) -> list:
 
     cfo, capex = val("cfo"), val("capex")
     if cfo is not None and capex is not None:
-        steps = [(t("Cassa operativa", "Operating CF"), cfo, "total"), ("Capex", -abs(capex), "delta"),
-                 ("Free cash flow", cfo - abs(capex), "total")]
+        steps = [(t("Cassa operativa", "Operating CF"), cfo, "total"), (t("Capex", "Capex"), -abs(capex), "delta"),
+                 (t("Free cash flow", "Free cash flow"), cfo - abs(capex), "total")]
         if val("buybacks"):
             steps.append((t("Riacquisti", "Buybacks"), -abs(val("buybacks")), "delta"))
         if val("dividends"):
@@ -520,7 +520,7 @@ def ratios_rows(a: dict) -> list:
             ("rnd_ratio", t("R&S su ricavi", "R&D to revenue"), pct, True),
             ("tax_rate", t("Aliquota fiscale effettiva", "Effective tax rate"), pct, True),
             ("interest_coverage", t("Copertura interessi", "Interest coverage"), times, False),
-            ("current_ratio", "Current ratio", times, False),
+            ("current_ratio", t("Current ratio", "Current ratio"), times, False),
             ("debt_to_assets", t("Debito / attivo", "Debt to assets"), pct, True),
             ("equity_multiplier", t("Attivo / patrimonio netto", "Assets to equity"), times, False),
             ("return_pct_fcf", t("FCF restituito agli azionisti", "FCF returned to shareholders"), pct, True),

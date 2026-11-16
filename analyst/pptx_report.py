@@ -21,7 +21,7 @@ from pptx.util import Emu, Inches, Pt
 
 from . import charts, themes
 from . import financials as F
-from .i18n import t, using
+from .i18n import fmt_date, t, using
 from .pdfreport import HIGHLIGHTS
 
 W, H = Inches(13.333), Inches(7.5)
@@ -49,7 +49,8 @@ class Deck:
         pages = [p for p in pages or [] if p]
         if not pages:
             return ""
-        return ("pp. " if len(pages) > 1 else "p. ") + ", ".join(str(self.labels.get(str(p)) or p) for p in pages)
+        ps = ", ".join(str(self.labels.get(str(p)) or p) for p in pages)
+        return t("pp. {p}", "pp. {p}", p=ps) if len(pages) > 1 else t("p. {p}", "p. {p}", p=ps)
 
     def text(self, slide, x, y, w, h, runs, size=14, align=PP_ALIGN.LEFT, anchor=MSO_ANCHOR.TOP, font=BODY_FONT):
         """runs: a string, or paragraphs as lists of (text, {bold, color, size, italic})."""
@@ -213,10 +214,7 @@ class Deck:
         self.text(s, Inches(1.1), Inches(2.2), W - Inches(2.2), Inches(1.4), [[(a.get("title") or "", {"size": 44, "bold": True, "font": TITLE_FONT})]],
                   anchor=MSO_ANCHOR.BOTTOM)
         self.text(s, Inches(1.1), Inches(3.7), W - Inches(2.2), Inches(0.8), [[(a.get("subtitle") or "", {"size": 18, "color": MUTED})]])
-        today = date.today()
-        from .market import months
-        mn = months()
-        when = t(f"{today.day} {mn[today.month - 1]} {today.year}", f"{mn[today.month - 1]} {today.day}, {today.year}")
+        when = fmt_date(date.today())
         self.text(s, Inches(1.1), H - Inches(1.4), W - Inches(2.2), Inches(0.8),
                   [[("Report Sniffer", {"size": 14, "bold": True}), (f"  ·  {t('Report', 'Report')}  ·  {when}", {"size": 14, "color": MUTED})],
                    [(t("Fonte: ", "Source: ") + (a.get("source") or ""), {"size": 11, "color": MUTED})]])
@@ -238,7 +236,7 @@ class Deck:
             box.fill.solid()
             box.fill.fore_color.rgb = _rgb("FFFFFF")
             box.line.color.rgb = _rgb(LINE)
-            label = tile.get("en") if lang == "en" and tile.get("en") else tile.get("it")
+            label = tile.get("label") or (tile.get("en") if lang == "en" and tile.get("en") else tile.get("it"))
             paras = [[(label or "", {"size": 14, "color": MUTED, "space": 4})],
                      [(tile.get("display") or "—", {"size": 32, "bold": True, "space": 2})]]
             if tile.get("exact"):
@@ -246,9 +244,9 @@ class Deck:
             yoy, vs = tile.get("yoy_display") or "", tile.get("vs") or ""
             if yoy:
                 paras.append([(yoy, {"size": 15, "bold": True, "color": UP if yoy.startswith("+") else DOWN}),
-                              ("  " + (("vs " + vs) if vs else t("sull'anno", "year on year")), {"size": 12, "color": MUTED})])
+                              ("  " + (t("vs {x}", "vs {x}", x=vs) if vs else t("sull'anno", "year on year")), {"size": 12, "color": MUTED})])
             elif tile.get("prev_display"):
-                paras.append([(f"{t('era', 'was')} {tile['prev_display']}" + (f" ({vs})" if vs else ""), {"size": 13, "color": MUTED})])
+                paras.append([(t("era {x}", "was {x}", x=tile["prev_display"]) + (f" ({vs})" if vs else ""), {"size": 13, "color": MUTED})])
             if tile.get("note"):
                 paras.append([(tile["note"], {"size": 11, "italic": True, "color": MUTED})])
             if tile.get("pages"):
@@ -261,7 +259,7 @@ class Deck:
         elif checks:
             ok = sum(1 for c in checks if c.get("ok"))
             self.text(s, MARGIN, Inches(4.45), W - 2 * MARGIN, Inches(0.6),
-                      [[(t(f"{ok} controlli aritmetici superati su {len(checks)}", f"{ok} of {len(checks)} arithmetic checks pass"), {"size": 16})]])
+                      [[(t("{ok} controlli aritmetici superati su {n}", "{ok} of {n} arithmetic checks pass", ok=ok, n=len(checks)), {"size": 16})]])
 
     def findings(self):
         finds = self.a.get("findings") or []
@@ -285,7 +283,7 @@ class Deck:
         if len(items) < 2:
             return
         div, unit = _scale(max(abs(v) for _, c, p, _ in items for v in (c, p) if v is not None), cur)
-        s = self.slide(t(f"Risultati: {years[0]} e {years[1]}", f"Results: {years[0]} vs {years[1]}") if len(years) > 1 else t("Risultati", "Results"))
+        s = self.slide(t("Risultati: {a} e {b}", "Results: {a} vs {b}", a=years[0], b=years[1]) if len(years) > 1 else t("Risultati", "Results"))
         series = [(years[0], [_n(c, div) for _, c, _, _ in items])]
         if len(years) > 1 and any(p is not None for _, _, p, _ in items):
             series.append((years[1], [_n(p, div) for _, _, p, _ in items]))
@@ -378,7 +376,7 @@ class Deck:
         cfo, capex = val("cfo"), val("capex")
         if cfo is None or capex is None:
             return
-        steps = [(t("Cassa operativa", "Operating cash flow"), cfo), ("Capex", -abs(capex)), ("Free cash flow", cfo - abs(capex))]
+        steps = [(t("Cassa operativa", "Operating cash flow"), cfo), (t("Capex", "Capex"), -abs(capex)), (t("Free cash flow", "Free cash flow"), cfo - abs(capex))]
         for k, lbl in (("buybacks", t("Riacquisti", "Buybacks")), ("dividends", t("Dividendi", "Dividends"))):
             if val(k):
                 steps.append((lbl, -abs(val(k))))
@@ -500,14 +498,15 @@ class Deck:
         rd = a.get("reading") or {}
         lines = []
         if a.get("total_pages"):
-            lines.append(t(f"Documento di {a['total_pages']} pagine.", f"A {a['total_pages']}-page document."))
+            lines.append(t("Documento di {n} pagine.", "A {n}-page document.", n=a["total_pages"]))
         if rd.get("pages_read"):
-            lines.append(t(f"{a.get('ai_provider') or 'L’AI'} ha letto {len(rd['pages_read'])} pagine; ogni numero che cita è confrontato con il documento.",
-                           f"{a.get('ai_provider') or 'The AI'} read {len(rd['pages_read'])} pages; every number it cites is matched to the document."))
+            lines.append(t("{ai} ha letto {n} pagine; ogni numero che cita è confrontato con il documento.",
+                           "{ai} read {n} pages; every number it cites is matched to the document.",
+                           ai=a.get("ai_provider") or t("L’AI", "The AI"), n=len(rd["pages_read"])))
         per = (a.get("fin") or {}).get("periods") or {}
         if len(per.get("flow") or []) > 1:
-            lines.append(t(f"Confronto: {per['flow'][0]} con {per['flow'][1]}; stato patrimoniale al {(per.get('stock') or [''])[0]}.",
-                           f"Comparison: {per['flow'][0]} against {per['flow'][1]}; balance sheet as of {(per.get('stock') or [''])[0]}."))
+            lines.append(t("Confronto: {a} con {b}; stato patrimoniale al {c}.", "Comparison: {a} against {b}; balance sheet as of {c}.",
+                           a=per["flow"][0], b=per["flow"][1], c=(per.get("stock") or [""])[0]))
         if a.get("kind") == "ixbrl":
             lines.append(t("Le cifre vengono dai tag XBRL del documento; rapporti e free cash flow sono calcolati.",
                            "Figures come from the document's XBRL tags; ratios and free cash flow are computed."))
@@ -535,7 +534,7 @@ def _scale(top: float, cur: str) -> tuple[float, str]:
     cur = cur or ""
     for div, it, en in ((1e9, "miliardi", "billions"), (1e6, "milioni", "millions"), (1e3, "migliaia", "thousands")):
         if top >= div * 1.5:
-            return div, (t(f"{it} di {cur}", f"{cur} {en}") if cur else t(it, en))
+            return div, (t("{u} di {cur}", "{cur} {u}", u=t(it, en), cur=cur) if cur else t(it, en))
     return 1.0, cur
 
 

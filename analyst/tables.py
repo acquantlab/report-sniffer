@@ -267,17 +267,16 @@ def page_tables(root, page: int) -> list[Table]:
 def period_label(months: Optional[int], end: Optional[date], lang: str) -> str:
     if end is None:
         return ""
-    mon = calendar.month_abbr[end.month]
-    mon_it = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"][end.month - 1]
+    from .i18n import fmt_date, fmt_month, tl
     if months is None:
-        return f"{end.day} {mon_it} {end.year}" if lang == "it" else f"{mon} {end.day}, {end.year}"
+        return fmt_date(end, lang)
+    mon = fmt_month(end.month, end.year, lang)
     if months == 12:
-        return (f"Esercizio {end.year}" if end.month == 12 else f"Esercizio al {mon_it} {end.year}") if lang == "it" else \
-            (f"FY{end.year}" if end.month == 12 else f"FY to {mon} {end.year}")
+        return tl(lang, "Esercizio {y}", "FY{y}", y=end.year) if end.month == 12 else tl(lang, "Esercizio al {m}", "FY to {m}", m=mon)
     if months == 6 and end.month in (6, 12):
-        return f"{'H1' if end.month == 6 else 'H2'} {end.year}" if lang == "en" else f"{'1° sem.' if end.month == 6 else '2° sem.'} {end.year}"
+        return tl(lang, "1° sem. {y}", "H1 {y}", y=end.year) if end.month == 6 else tl(lang, "2° sem. {y}", "H2 {y}", y=end.year)
     # a quarter is not named "Q2" here: a fiscal year may not follow the calendar (Apple's Q3 ends in June)
-    return f"{months}M to {mon} {end.year}" if lang == "en" else f"{months} mesi al {mon_it} {end.year}"
+    return tl(lang, "{n} mesi al {m}", "{n}M to {m}", n=months, m=mon)
 
 
 def _kind(t: Table) -> str:

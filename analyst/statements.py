@@ -482,7 +482,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         elif h.get("fiscal_q") and (h["months"] or 3) == 3:
             # "Second Quarter 2023 / 2022" without dates: the company's own quarter
             q = h["fiscal_q"]
-            periods[side] = [f"Q{q} {top}" if lang() == "en" else f"{q}° trim. {top}", f"Q{q} {top - 1}" if lang() == "en" else f"{q}° trim. {top - 1}"]
+            from .i18n import t
+            periods[side] = [t("{q}° trim. {y}", "Q{q} {y}", q=q, y=top), t("{q}° trim. {y}", "Q{q} {y}", q=q, y=top - 1)]
         else:
             months = h["months"] or 12
             periods[side] = [period_label(months, end(top), lang()), period_label(months, end(top - 1), lang())]
