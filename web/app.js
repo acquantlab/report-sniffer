@@ -231,7 +231,10 @@ async function downloadOriginal(btn) {
       throw new Error(msg);
     }
     const cd = r.headers.get("content-disposition") || "";
-    const name = (cd.match(/filename="([^"]+)"/) || [])[1] || "document";
+    // filename* holds the real name (Greek, Japanese…); filename="…" its ASCII spelling
+    const star = (cd.match(/filename\*=UTF-8''([^;]+)/i) || [])[1];
+    let name = (cd.match(/filename="([^"]+)"/) || [])[1] || "document";
+    try { if (star) name = decodeURIComponent(star); } catch { /* malformed: keep the ASCII name */ }
     const link = document.createElement("a");
     link.href = URL.createObjectURL(await r.blob());
     link.download = name;
