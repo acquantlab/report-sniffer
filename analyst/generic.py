@@ -17,6 +17,7 @@ from typing import Callable, Optional
 from lxml import etree, html as lxml_html
 
 from . import ixbrl
+from .i18n import t
 
 KEYWORDS = {
     # weight 3: headline figures
@@ -144,7 +145,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, choose: Chooser = Non
             if id(wd) in keep_ids:
                 f = figs[id(wd)]
                 fid = len(facts)
-                facts.append({"id": fid, "label": f["label"] or "Cifra", "value": f["value"], "display": wd["t"], "page": i + 1,
+                facts.append({"id": fid, "label": f["label"] or t("Cifra", "Figure"), "value": f["value"], "display": wd["t"], "page": i + 1,
                               "kind": "num", "col": "Valore", "key": f["score"] >= 2, "score": f["score"]})
                 attrs = f' class="w xf" data-f="{fid}"'
             elif id(wd) in line_heads:
@@ -372,7 +373,7 @@ def html_document(data: bytes, base_url: Optional[str], choose: Chooser = None) 
     choose(all page texts, table metrics) may pick the pages to show (0-based); the pages holding the
     headline figures are always among them."""
     from . import tables
-    from .i18n import lang
+    from .i18n import lang, t
     doc = ixbrl.parse(data, base_url)          # sanitises and splits pages; no facts in plain HTML
     frags = [lxml_html.fragment_fromstring(page or "<div></div>", create_parent="div") for page in doc.pages]
     tbls = [tb for pi, fr in enumerate(frags, start=1) for tb in tables.page_tables(fr, pi)]
@@ -413,8 +414,8 @@ def html_document(data: bytes, base_url: Optional[str], choose: Chooser = None) 
             tb, col, row_label = cell_of.get(id(td), (None, None, ""))
             pct = bool(tb and (tb.percent or f["text"].endswith("%")))
             period = tables.period_label(col.months if not col.instant else None, col.end, lang()) if col and col.end and not col.skip else ""
-            label = row_label or f["label"] or "Cifra"
-            facts.append({"id": fid, "label": label + (" (% " + ("dei ricavi" if lang() == "it" else "of revenue") + ")" if tb and tb.percent else ""),
+            label = row_label or f["label"] or t("Cifra", "Figure")
+            facts.append({"id": fid, "label": label + (t(" (% dei ricavi)", " (% of revenue)") if tb and tb.percent else ""),
                           "value": f["value"], "display": f["text"], "page": pi, "period": period, "pct": pct,
                           "kind": "num", "col": "Valore", "key": f["score"] >= 2 and not (tb and tb.percent), "score": f["score"]})
         inner = "".join(etree.tostring(c, method="html", encoding="unicode", with_tail=True) for c in frag)

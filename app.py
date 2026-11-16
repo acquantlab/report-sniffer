@@ -29,7 +29,7 @@ def selftest():
     from analyst import generic, pdfreport, pptx_report, reader, xlsx_export  # noqa: F401
     Presentation()                                         # needs the template bundled with python-pptx
     canvas.Canvas(os.devnull).save()
-    missing = [n for n in ("index.html", "app.js", "app.css", "sniffer.js", "themes.js") if not (server.WEB / n).exists()]
+    missing = [n for n in ("index.html", "app.js", "app.css", "sniffer.js", "themes.js", "i18n.js") if not (server.WEB / n).exists()]
     if missing:
         raise SystemExit("missing web files: %s" % ", ".join(missing))
     from analyst import typefaces
@@ -38,6 +38,10 @@ def selftest():
     if [f for f, _ in typefaces.runs("Ελ 日本 한국")] != ["", "RS-CJK", "RS-Hangul"]:
         raise SystemExit("fonts of the PDF report: unexpected coverage")
     c.save()
+    from analyst import i18n                               # every language's translations are bundled
+    short = [code for code in i18n.LANGS if code not in ("it", "en") and len(i18n.catalog(code)) < 300]
+    if short:
+        raise SystemExit("translations missing: %s" % ", ".join(short))
     print("selftest ok")
     return 0
 

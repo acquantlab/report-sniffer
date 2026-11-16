@@ -46,7 +46,10 @@
   </div>
   <footer class="opts">
     <label><span data-i18n="opt_lang">Report language</span>
-      <select id="opt-lang"><option value="en">English</option><option value="it">Italiano</option></select>
+      <select id="opt-lang"></select>
+    </label>
+    <label><span data-i18n="ui_lang">Interface</span>
+      <select id="opt-ui"></select>
     </label>
     <span class="theme-row"><span data-i18n="theme">Theme</span><span class="theme-pick" role="group" data-i18n-aria="theme" aria-label="Theme"></span></span>
     <button id="open-settings" type="button" class="key" data-i18n="settings">Settings</button>
@@ -71,7 +74,7 @@
     <div class="ctrl">
       <button id="play" type="button" data-i18n="play">Play</button>
       <button id="restart" type="button" data-i18n="restart">Restart</button>
-      <select id="lang2" data-i18n-aria="opt_lang" aria-label="Report language"><option value="en">English</option><option value="it">Italiano</option></select>
+      <select id="lang2" data-i18n-aria="opt_lang" aria-label="Report language"></select>
       <span class="theme-pick" role="group" data-i18n-aria="theme" aria-label="Theme"></span>
       <span class="dl">
         <button id="download" type="button" aria-haspopup="menu" aria-expanded="false" data-i18n="download">Download</button>
@@ -95,7 +98,7 @@
       <div class="r-head">
         <h2 id="r-title"></h2>
         <p id="r-sub"></p>
-        <p id="r-count"><b id="r-n">0</b> <span id="r-of">of</span> <span id="r-m">0</span> <span id="r-read">figures read</span><br><small id="r-pages"></small></p>
+        <p id="r-count"><span id="r-counter"></span><br><small id="r-pages"></small></p>
       </div>
       <div id="r-section">
         <h3 id="r-sec-title"></h3>

@@ -89,7 +89,7 @@ def _build(a: dict) -> bytes:
                             t("Confronto", "Compared with"), t("Nota", "Note"), t("Pagina", "Page")], f_head)
         for tile in a["card"]:
             r += 1
-            label = tile.get("en") if lang == "en" and tile.get("en") else tile.get("it")
+            label = tile.get("label") or (tile.get("en") if lang == "en" and tile.get("en") else tile.get("it"))
             ws.write(r, 0, label or "")
             ws.write(r, 1, tile.get("display") or "—")
             ws.write(r, 2, tile.get("exact") or "")
@@ -135,8 +135,8 @@ def _build(a: dict) -> bytes:
         ws.set_column(5, 5, 10)
         unit = " ".join(x for x in (cur, scale) if x)
         ws.write(0, 0, a.get("title") or "", f_title)
-        ws.write(1, 0, t(f"Importi in {unit}; per azione in {cur or 'valuta'}; azioni in {scale or 'unità'}.",
-                         f"Amounts in {unit}; per share in {cur or 'currency'}; shares in {scale or 'units'}.") if unit else "", f_sub)
+        ws.write(1, 0, t("Importi in {u}; per azione in {c}; azioni in {s}.", "Amounts in {u}; per share in {c}; shares in {s}.",
+                         u=unit, c=cur or t("valuta", "currency"), s=scale or t("unità", "units")) if unit else "", f_sub)
         r = 3
         rows: dict[str, int] = {}
         vals: dict[int, list] = {}           # row -> [current, comparative] as written, for cached formula results

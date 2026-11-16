@@ -142,7 +142,8 @@ def _ok_numbers(text: str, allowed: set[str]) -> bool:
 
 
 def _sentences(text: str) -> list[str]:
-    return [s for s in re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-Ý])", text.strip()) if s]
+    # a full stop before a capital (Latin, Greek, Cyrillic), or a Chinese / Japanese full stop
+    return [s.strip() for s in re.split(r"(?<=[.!?])\s+(?=[A-ZÀ-ÝΑ-ΩА-ЯЁ])|(?<=[。！？])", text.strip()) if s.strip()]
 
 
 def read(title: str, page_texts: dict[int, str], total_pages: int, known: Optional[dict[str, dict]] = None,
@@ -184,7 +185,8 @@ def validate(res: dict, page_texts: dict[int, str], known: dict[str, dict]) -> d
                         "metric": f.get("metric") if f.get("metric") in METRIC_KEYS else "",
                         "role": f.get("role") if f.get("role") in ("current", "prior") else "", "multiplier": mult})
 
-    summary = " ".join(s for s in _sentences(str(res.get("summary") or "")) if _ok_numbers(s, allowed))
+    kept = [s for s in _sentences(str(res.get("summary") or "")) if _ok_numbers(s, allowed)]
+    summary = "".join(s + ("" if s.endswith(("。", "！", "？")) else " ") for s in kept).strip()      # no spaces in Chinese, Japanese
     sections = []
     for sec in _list(res.get("sections")):
         pts = []

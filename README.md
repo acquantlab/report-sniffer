@@ -12,8 +12,8 @@ An AI reads every document first — what it is, how the business works, the res
 the sniffer, a small rolled banknote, then goes over the pages that hold what it found and
 selects the figures one by one. Every number the AI writes is checked against the page it comes from.
 
-The interface is in English, or in Italian when the operating system's language is Italian (`SNIFFER_LANG=en` or
-`SNIFFER_LANG=it` forces one). The report can be produced in English or Italian; it starts in the interface language.
+**Nine languages** — English, Italiano, Español, Français, Deutsch, Português, Русский, 中文, 日本語 — for the interface
+and for every report (in the page, PDF, PowerPoint and Excel). See [Languages](#languages).
 
 ## Screenshots
 
@@ -77,7 +77,7 @@ Close the terminal window (or press Ctrl+C, or **Quit** on the home page) to sto
 - **macOS blocks the double-click** ("cannot be verified"): use `python3 launch.py` from Terminal, or go to
   *System Settings → Privacy & Security*, click *Open Anyway* at the bottom and try again.
 - **Windows shows "Windows protected your PC"**: click *More info → Run anyway*, or use `py launch.py`.
-- Options (also for the downloaded app): `SNIFFER_PORT=9000` changes the port, `SNIFFER_LANG=en|it` forces the interface language, `SNIFFER_BROWSER="Brave Browser"` (macOS app name, or an
+- Options (also for the downloaded app): `SNIFFER_PORT=9000` changes the port, `SNIFFER_LANG=de` (or any [language](#languages) code) forces the interface language, `SNIFFER_BROWSER="Brave Browser"` (macOS app name, or an
   executable path elsewhere) forces a browser, `--no-browser` starts only the server.
 - To build the app yourself: `pip install -r requirements.txt pyinstaller`, then
   `pyinstaller --noconfirm packaging/report_sniffer.spec` (the result is in `dist/`).
@@ -90,7 +90,7 @@ Close the terminal window (or press Ctrl+C, or **Quit** on the home page) to sto
 | Companies before an IPO (no ticker yet) | Latest S-1, F-1 or 424B prospectus (tagged or not) | SEC EDGAR full-text search |
 | European companies (Ferrari, ENI, …) | ESEF annual report in inline XBRL; earlier years under *Other documents* | filings.xbrl.org |
 | Crypto, indices, currencies, commodities, ETFs, funds (BTC-USD, ^GSPC, EURUSD=X, GC=F, …) | A generated market sheet: chart, calendar-year and monthly returns, volatility, drawdowns | Yahoo Finance (Coinbase as fallback for crypto) |
-| Any other document, in English or Italian: annual report or statements as PDF/HTML, KID, prospectus, factsheet, whitepaper | The file you upload (*Upload a document*) or the URL you paste | Your file / URL |
+| Any other document: annual report or statements as PDF/HTML, KID, prospectus, factsheet, whitepaper (statement lines are recognised by rule in English and Italian, by the AI in any language) | The file you upload (*Upload a document*) or the URL you paste | Your file / URL |
 
 **Not in the search** (the home page says so too): Italian half-year reports and other documents not filed in ESEF, accounts of
 unlisted companies (business register), fund KIDs and factsheets — upload the PDF or paste its address.
@@ -145,8 +145,8 @@ In untagged PDF/HTML the figures are the ones printed on the page:
   pass. When no check is possible the report says so; it never calls figures "verified" without a check.
 - **Findings**: growth, margins, cash conversion, shareholder returns, interest coverage, debt due vs cash,
   liquidity, leverage — deterministic calculations on the document's figures.
-- **Language**: Italian or English, chosen on the home page or while reading (the report is regenerated:
-  findings, checks, labels, number formats — `$120B` / `$120 mld`).
+- **Language**: any of the [nine languages](#languages), chosen on the home page or while reading (the report is
+  regenerated: the AI's texts, findings, checks, labels, periods, number formats — `$120B`, `$120 mld`, `$120 Mrd.`, `$1,200亿`).
 - **Download** (menu in the reading view): *Report (PDF)*; *Slides (PowerPoint)* — a 16:9 deck with native, editable charts,
   every slide citing the printed pages and the source; *Figures (Excel)* — statements as numbers with unit and page, changes
   and free cash flow as formulas, ratios, checks, every figure read (prices and returns for market sheets).
@@ -180,6 +180,33 @@ It always reads **every** figure on the pages it opens and adapts its pace to ho
 EPS, operating cash flow) stay selected for at least half a second, however fast it goes. The "N of M figures read" counter counts
 the figures on those pages, and the panel lists which pages of the document were read (the cover and the pages
 with the financial statements and the key figures).
+
+## Languages
+
+| Code | Language | Numbers | Amounts | Dates |
+|---|---|---|---|---|
+| `en` | English | 1,234.5 | $16.3B | Jun 30, 2026 |
+| `it` | Italiano | 1.234,5 | $16,3 mld | 30 giu 2026 |
+| `es` | Español | 1.234,5 | $16,3 mil M | 30 jun 2026 |
+| `fr` | Français | 1 234,5 | $16,3 Md | 30 juin 2026 |
+| `de` | Deutsch | 1.234,5 | $16,3 Mrd. | 30. Juni 2026 |
+| `pt` | Português (Brasil) | 1.234,5 | $16,3 bi | 30 jun 2026 |
+| `ru` | Русский | 1 234,5 | $16,3 млрд | 30 июн. 2026 |
+| `zh` | 中文（简体） | 1,234.5 | $163亿 | 2026年6月30日 |
+| `ja` | 日本語 | 1,234.5 | $163億 | 2026年6月30日 |
+
+- **Interface**: the *Interface* menu in the bottom bar of the home page (remembered in the browser); by default the
+  operating system's language when it is one of these, else English. The app's messages (progress, errors) follow it.
+- **Report**: the *Report language* menu on the home page or in the reading bar. Everything the report says is in that
+  language — the AI writes its summary, key points and findings in it, and the page, the PDF, the slides and the
+  workbook use its words, periods (`FY2025`, `Esercizio 2025`, `GJ 2025`, `2025财年`…), number and date formats.
+  Figures quoted from the document stay as printed.
+- The PDF embeds fonts for Latin, Greek, Cyrillic, Chinese, Japanese and Korean, so names in those scripts are printed
+  whatever the report language. Arabic and Hindi are not offered: the PDF cannot lay out right-to-left or joined
+  scripts.
+- The translations (`analyst/locales/*.json`, `web/i18n.js`) were written with an AI and checked by tests for
+  completeness and placeholders, not by native speakers: corrections are welcome. A text added to the code in Italian
+  and English must be added to every catalog (`tests/test_i18n.py` fails until it is).
 
 ## The AI (required)
 
@@ -274,8 +301,9 @@ Start Report Sniffer.command  macOS/Linux double-click wrapper
 Start Report Sniffer.bat      Windows double-click wrapper
 server.py                     FastAPI server (localhost only)
 analyst/                      sources, iXBRL parser, tables, financials, statements, market sheet, PDF/HTML, AI providers and reader, PDF report, charts and themes, i18n
+analyst/locales/              translations of the reports and messages (one JSON catalog per language, keyed by the English text)
 analyst/fonts/                fonts embedded in the PDF report, with their licenses
-web/                          interface, sniffer animation, live report
+web/                          interface (texts in web/i18n.js), sniffer animation, live report
 tests/                        offline tests on synthetic documents and simulated APIs
 ```
 

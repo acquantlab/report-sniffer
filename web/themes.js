@@ -15,20 +15,20 @@ const dark = (o) => ({
 
 export const THEMES = {
   terminal: {
-    name: { en: "Terminal (amber)", it: "Terminale (ambra)" }, swatch: "#ff9f1a", dark: true,
+    name: { en: "Terminal (amber)", it: "Terminale (ambra)", es: "Terminal (ámbar)", fr: "Terminal (ambre)", de: "Terminal (Bernstein)", pt: "Terminal (âmbar)", ru: "Терминал (янтарь)", zh: "终端（琥珀色）", ja: "ターミナル（琥珀）" }, swatch: "#ff9f1a", dark: true,
     css: dark({}),
     sniffer: { back: "#000000", frame: "#ff9f1a", mark: "#f4f1e8" },
     ping: "#e07b00", sight: "#1f6fe0", marker: "#ffd34d",
   },
   phosphor: {
-    name: { en: "Phosphor (green)", it: "Fosforo (verde)" }, swatch: "#35e07f", dark: true,
+    name: { en: "Phosphor (green)", it: "Fosforo (verde)", es: "Fósforo (verde)", fr: "Phosphore (vert)", de: "Phosphor (grün)", pt: "Fósforo (verde)", ru: "Люминофор (зелёный)", zh: "荧光（绿色）", ja: "蛍光（緑）" }, swatch: "#35e07f", dark: true,
     css: dark({ "--accent": "#35e07f", "--accent-soft": "#062414", "--input": "#b6ffd0", "--sel": "#0b4a2a", "--link": "#7fe7ff",
                 "--text": "#dff5e6", "--text2": "#b3d2bf", "--up": "#35e07f", "--ok": "#35e07f" }),
     sniffer: { back: "#000000", frame: "#35e07f", mark: "#eafff1" },
     ping: "#0f9d52", sight: "#0e8fa8", marker: "#b6ffd0",
   },
   desk: {
-    name: { en: "Desk (blue)", it: "Desk (blu)" }, swatch: "#4aa3ff", dark: true,
+    name: { en: "Desk (blue)", it: "Desk (blu)", es: "Desk (azul)", fr: "Desk (bleu)", de: "Desk (blau)", pt: "Desk (azul)", ru: "Desk (синий)", zh: "工作台（蓝色）", ja: "デスク（青）" }, swatch: "#4aa3ff", dark: true,
     css: dark({ "--bg": "#050b14", "--panel": "#08111d", "--bar": "#0f1c2e", "--line": "#22344d", "--faint": "#12203a",
                 "--accent": "#4aa3ff", "--accent-soft": "#0a2140", "--input": "#ffffff", "--sel": "#16407a", "--link": "#8cc4ff",
                 "--text": "#e8eef7", "--text2": "#bccadd", "--muted": "#8192a8", "--veil": "rgba(5, 11, 20, .9)" }),
@@ -36,7 +36,7 @@ export const THEMES = {
     ping: "#1c6fd1", sight: "#d9730d", marker: "#ffd34d",
   },
   paper: {
-    name: { en: "Paper (light)", it: "Carta (chiaro)" }, swatch: "#f3f1ea",
+    name: { en: "Paper (light)", it: "Carta (chiaro)", es: "Papel (claro)", fr: "Papier (clair)", de: "Papier (hell)", pt: "Papel (claro)", ru: "Бумага (светлая)", zh: "纸张（浅色）", ja: "ペーパー（明るい）" }, swatch: "#f3f1ea",
     css: {
       "--bg": "#f3f1ea", "--panel": "#fbfaf6", "--bar": "#e6e3d9", "--line": "#c9c5b8", "--faint": "#e9e6dc",
       "--text": "#14181f", "--text2": "#333a45", "--muted": "#666c76", "--wait": "#b3b0a6",

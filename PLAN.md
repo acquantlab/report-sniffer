@@ -25,7 +25,8 @@ financial instrument** and run locally (macOS, Windows, Linux) in a Chromium-bas
 - [x] `analyst/pdfreport.py` + `analyst/charts.py` — report PDF drawn with reportlab in the app's style, with charts
       (results vs prior year, margins, balance sheet, cash bridge, ratios; price, yearly returns, drawdown, monthly
       heatmap, risk) — served at `/api/doc/{id}/report.pdf`
-- [x] `analyst/i18n.py` — interface language (system) and report language (Italian / English)
+- [x] `analyst/i18n.py` + `analyst/locales/` + `web/i18n.js` — nine languages (en, it, es, fr, de, pt, ru, zh, ja) for the
+      interface and the reports; per-language number, amount and date formats; CJK line breaking in the PDF
 - [x] `analyst/pipeline.py` — one analysis format for the web app, sanitised `view.html`
 - [x] `server.py`, `web/` — sniffer animation, pacing, live report, finale, report download; search results offer
       *Analyse* or *Download original* (`/api/original`: SEC filing, ESEF report, price history CSV)
@@ -90,8 +91,8 @@ Every figure cites its page; the occurrence highlighted is the one on the page w
 - Speed: PDF pages are chosen from plain text and only the chosen pages get word boxes and (JPEG) images.
 - Report panel: "N of M figures read", pages read, table of the section being read, other figures with page.
 - Finale: key findings one by one, then the card (4 tiles with YoY change and page, 3 findings, figures and checks).
-- Interface in English, Italian when the OS language is Italian (server-side detection: macOS AppleLanguages,
-  Windows UI language, LANG elsewhere); report in English or Italian; downloadable PDF report with charts.
+- Interface in nine languages: chosen in the page (cookie), else the OS language (macOS AppleLanguages, Windows UI
+  language, LANG elsewhere), else English; report in any of the nine; downloadable PDF report with charts.
 
 ## AI (required)
 

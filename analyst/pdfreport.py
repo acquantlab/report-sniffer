@@ -9,6 +9,7 @@ No pages of raw figures: every number shown is there because it says something.
 from __future__ import annotations
 
 import io
+import re
 import threading
 from datetime import date
 
@@ -21,7 +22,7 @@ from reportlab.platypus import (CondPageBreak, Flowable, ListFlowable, ListItem,
                                 Spacer, Table, TableStyle)
 
 from . import charts, typefaces
-from .i18n import t, using
+from .i18n import CJK, fmt_date, t, using
 
 INK, MUTED, LINE, PINK, BLUE, CYAN, UP, DOWN = (colors.HexColor(c) for c in
                                                 ("#14181f", "#666c76", "#c9ccd3", "#c96a00", "#14181f", "#1f5fd0", "#0a7a45", "#b3261e"))
@@ -42,6 +43,11 @@ def _x(s) -> str:
     return typefaces.markup(str(s if s is not None else "").translate(_SAFE))
 
 
+def _xm(s: str) -> str:
+    """Markup we wrote ("<b>86</b> figures read") around translated text: the text gets the fonts of its script."""
+    return "".join(p if p.startswith("<") else typefaces.markup(p) for p in re.split(r"(<[^>]+>)", s))
+
+
 def _plist(pages) -> str:
     return ", ".join(str(LABELS.get(str(p)) or LABELS.get(p) or p) for p in pages)
 
@@ -49,7 +55,7 @@ def _plist(pages) -> str:
 def _pages(pages) -> str:
     if not pages:
         return ""
-    return ("pp. " if len(pages) > 1 else "p. ") + _plist(pages)
+    return t("pp. {p}", "pp. {p}", p=_plist(pages)) if len(pages) > 1 else t("p. {p}", "p. {p}", p=_plist(pages))
 
 
 def _tag(pages) -> str:
@@ -130,10 +136,12 @@ def build(a: dict, theme: str = "terminal") -> bytes:
     from . import themes
     lang = a.get("lang") or "en"
     typefaces.register()
-    with _LOCK, using(lang):              # colours and page labels are module state while one report is drawn
+    with _LOCK, using(lang):              # colours, page labels and line breaking are module state while one report is drawn
         themes.apply(theme)
         LABELS.clear()
         LABELS.update({str(k): v for k, v in (a.get("page_labels") or {}).items()})
+        for st in S.values():             # Chinese and Japanese have no spaces: lines break between characters
+            st.wordWrap = "CJK" if lang in CJK else None
         try:
             return _build(a, lang)
         finally:
@@ -234,9 +242,7 @@ def _build(a: dict, lang: str) -> bytes:
     buf = io.BytesIO()
     W = A4[0] - 28 * mm
     today = date.today()
-    from .market import months
-    mn = months()
-    today_s = t(f"{today.day} {mn[today.month - 1]} {today.year}", f"{mn[today.month - 1]} {today.day}, {today.year}")
+    today_s = fmt_date(today)
 
     def first_page(c, doc):
         _mark(c, 14 * mm + 6, A4[1] - 14 * mm - 6)
@@ -245,7 +251,8 @@ def _build(a: dict, lang: str) -> bytes:
         c.drawString(14 * mm + 18, A4[1] - 14 * mm - 9, "REPORT SNIFFER")
         c.setFont(SANS, 8.5)
         c.setFillColor(MUTED)
-        c.drawString(14 * mm + 18 + c.stringWidth("REPORT SNIFFER", SANS_B, 8.5) + 8, A4[1] - 14 * mm - 9, f"{t('Report', 'Report')}  |  {today_s}")
+        typefaces.draw(c, 14 * mm + 18 + c.stringWidth("REPORT SNIFFER", SANS_B, 8.5) + 8, A4[1] - 14 * mm - 9,
+                       f"{t('Report', 'Report')}  |  {today_s}", SANS, 8.5)
         c.setStrokeColor(INK)
         c.setLineWidth(0.8)
         c.line(14 * mm, A4[1] - 14 * mm - 17, A4[0] - 14 * mm, A4[1] - 14 * mm - 17)
@@ -263,16 +270,16 @@ def _build(a: dict, lang: str) -> bytes:
     # summary card: headline figures, what they are compared with, where they are printed
     tiles = []
     for tile in a.get("card", []):
-        label = tile.get("en") if lang == "en" and tile.get("en") else tile.get("it")
+        label = tile.get("label") or (tile.get("en") if lang == "en" and tile.get("en") else tile.get("it"))
         cell = [Paragraph(_x(label), S["tl"]), Paragraph(_x(tile.get("display")), S["tv"])]
         if tile.get("exact"):
             cell.append(Paragraph(_x(tile["exact"]), S["tl"]))
         yoy, vs = tile.get("yoy_display") or "", tile.get("vs") or ""
         if yoy:
             col = "#0f8a5f" if yoy.startswith("+") else "#c8323c"
-            cell.append(Paragraph(f'<font color="{col}">{_x(yoy)}</font> <font color="#6c6a7c">{_x(("vs " + vs) if vs else t("sull’anno", "year on year"))}</font>', S["ty"]))
+            cell.append(Paragraph(f'<font color="{col}">{_x(yoy)}</font> <font color="#6c6a7c">{_x(t("vs {x}", "vs {x}", x=vs) if vs else t("sull’anno", "year on year"))}</font>', S["ty"]))
         elif tile.get("prev_display"):
-            cell.append(Paragraph(f'<font color="#6c6a7c">{_x(t("era", "was"))} {_x(tile["prev_display"])}{_x(" (" + vs + ")" if vs else "")}</font>', S["ty"]))
+            cell.append(Paragraph(f'<font color="#6c6a7c">{_x(t("era {x}", "was {x}", x=tile["prev_display"]))}{_x(" (" + vs + ")" if vs else "")}</font>', S["ty"]))
         if tile.get("note"):
             cell.append(Paragraph(f"<i>{_x(tile['note'])}</i>", S["tl"]))
         if tile.get("pages"):
@@ -303,13 +310,13 @@ def _build(a: dict, lang: str) -> bytes:
     checks = a.get("checks", [])
     passed = sum(1 for c in checks if c.get("ok"))
     nfig = len(a.get("facts", {}))
-    left_note = f"<b>{nfig}</b> {t('cifre lette', 'figures read')} · " + (
-        f"<b>{passed}</b> {t('controlli superati su', 'checks passed out of')} {len(checks)}" if checks else
+    left_note = t("{n} cifre lette", "{n} figures read", n=f"<b>{nfig}</b>") + " · " + (
+        t("{ok} controlli superati su {n}", "{ok} checks passed out of {n}", ok=f"<b>{passed}</b>", n=len(checks)) if checks else
         t("nessun controllo aritmetico possibile su queste cifre", "no arithmetic check possible on these figures"))
     ai_note = (t("Testi di {p}; ogni numero citato è confrontato con il documento", "Text by {p}; every number it cites is matched to the document")
                .format(p=a.get("ai_provider") or "AI") if a.get("ai") else
                t("Calcoli deterministici sulle cifre del documento", "Deterministic calculations on the document's figures"))
-    foot = Table([[Paragraph(left_note, S["foot"]), Paragraph(_x(ai_note), ParagraphStyle("fr", parent=S["foot"], alignment=2))]],
+    foot = Table([[Paragraph(_xm(left_note), S["foot"]), Paragraph(_x(ai_note), ParagraphStyle("fr", parent=S["foot"], alignment=2))]],
                  colWidths=[inner_w * 0.5, inner_w * 0.5])
     foot.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), 0.6, LINE), ("LEFTPADDING", (0, 0), (-1, -1), 0),
                               ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 6)]))
@@ -382,7 +389,7 @@ def _build(a: dict, lang: str) -> bytes:
         data = []
         for c in checks:
             mark = '<font color="#0f8a5f"><b>OK</b></font>' if c.get("ok") else '<font color="#c8323c"><b>NO</b></font>'
-            res = t("quadra", "balances") if c.get("ok") else _x(c.get("detail") or t("non quadra", "does not balance"))
+            res = _x(t("quadra", "balances") if c.get("ok") else c.get("detail") or t("non quadra", "does not balance"))
             data.append([Paragraph(mark, S["cell"]), Paragraph(_x(c.get("name")), S["cell"]),
                          Paragraph(f"<para alignment='right'><font color='#6c6a7c'>{res}</font></para>", S["cell"]),
                          Paragraph(f"<para alignment='right'>{_tag(c.get('pages'))}</para>", S["cell"])])
@@ -396,16 +403,18 @@ def _build(a: dict, lang: str) -> bytes:
     shown = [p["n"] for p in a.get("pages", [])]
     lines = []
     if a.get("total_pages"):
-        lines.append(t(f"Documento di {a['total_pages']} pagine; sono state mostrate le pagine {_plist(shown)}.",
-                       f"A {a['total_pages']}-page document; the reading showed pages {_plist(shown)}."))
+        lines.append(t("Documento di {n} pagine; sono state mostrate le pagine {pages}.", "A {n}-page document; the reading showed pages {pages}.",
+                       n=a["total_pages"], pages=_plist(shown)))
     if rd.get("pages_read"):
-        lines.append(t(f"{a.get('ai_provider') or 'L’AI'} ha letto {len(rd['pages_read'])} pagine (sintesi, analisi della gestione, prospetti).",
-                       f"{a.get('ai_provider') or 'The AI'} read {len(rd['pages_read'])} pages (summary, management's discussion, statements)."))
+        lines.append(t("{ai} ha letto {n} pagine (sintesi, analisi della gestione, prospetti).",
+                       "{ai} read {n} pages (summary, management's discussion, statements).",
+                       ai=a.get("ai_provider") or t("L’AI", "The AI"), n=len(rd["pages_read"])))
     if (a.get("fin") or {}).get("periods"):
         pf = a["fin"]["periods"].get("flow") or []
         if len(pf) > 1 and pf[1]:
-            lines.append(t(f"Confronto: {pf[0]} con {pf[1]}, lo stesso periodo dell'anno prima; stato patrimoniale al {(a['fin']['periods'].get('stock') or [''])[0]}.",
-                           f"Comparison: {pf[0]} against {pf[1]}, the same period a year earlier; balance sheet as of {(a['fin']['periods'].get('stock') or [''])[0]}."))
+            lines.append(t("Confronto: {a} con {b}, lo stesso periodo dell'anno prima; stato patrimoniale al {c}.",
+                           "Comparison: {a} against {b}, the same period a year earlier; balance sheet as of {c}.",
+                           a=pf[0], b=pf[1], c=(a["fin"]["periods"].get("stock") or [""])[0]))
     if a.get("kind") == "market":
         lines.append(t("Scheda generata dallo storico dei prezzi giornalieri: rendimenti, volatilità e drawdown sono calcolati.",
                        "Sheet generated from the daily price history: returns, volatility and drawdowns are computed."))
@@ -421,8 +430,8 @@ def _build(a: dict, lang: str) -> bytes:
     for ln in lines:
         story += [Paragraph(_x(ln), S["small"]), Spacer(1, 2)]
     src = a.get("source") or ""
-    story += [Spacer(1, 10), Paragraph(f"{t('Fonte', 'Source')}: {_x(src)}", S["foot"]),
-              Paragraph(f"{t('Generato da Report Sniffer il', 'Generated by Report Sniffer on')} {today_s}. {_x(ai_note)}.", S["foot"])]
+    story += [Spacer(1, 10), Paragraph(_x(t("Fonte: ", "Source: ") + src), S["foot"]),
+              Paragraph(_x(f"{t('Generato da Report Sniffer il', 'Generated by Report Sniffer on')} {today_s}{t('.', '.')} {ai_note}{t('.', '.')}"), S["foot"])]
     doc.build(story, onFirstPage=first_page, onLaterPages=later_pages)
     return buf.getvalue()
 
