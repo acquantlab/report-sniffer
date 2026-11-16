@@ -32,6 +32,12 @@ def selftest():
     missing = [n for n in ("index.html", "app.js", "app.css", "sniffer.js", "themes.js") if not (server.WEB / n).exists()]
     if missing:
         raise SystemExit("missing web files: %s" % ", ".join(missing))
+    from analyst import typefaces
+    c = canvas.Canvas(os.devnull)                          # every font of the PDF report is bundled and loads
+    typefaces.draw(c, 10, 10, "Report Ελληνικά Россия 日本語 中文 한국어", typefaces.SANS, 10)
+    if [f for f, _ in typefaces.runs("Ελ 日本 한국")] != ["", "RS-CJK", "RS-Hangul"]:
+        raise SystemExit("fonts of the PDF report: unexpected coverage")
+    c.save()
     print("selftest ok")
     return 0
 

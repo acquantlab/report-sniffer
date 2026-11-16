@@ -11,7 +11,7 @@ from typing import Optional
 from reportlab.lib import colors
 from reportlab.platypus import Flowable, KeepTogether, Paragraph, Spacer, Table, TableStyle
 
-from . import financials as F
+from . import financials as F, typefaces
 from .i18n import t
 
 INK = colors.HexColor("#14181f")
@@ -26,7 +26,7 @@ UP = colors.HexColor("#0a7a45")
 DOWN = colors.HexColor("#b3261e")
 AMBER = colors.HexColor("#f2a900")
 VIOLET = colors.HexColor("#5b6472")
-SANS, SANS_B = "Helvetica", "Helvetica-Bold"
+SANS, SANS_B = typefaces.SANS, typefaces.SANS_B
 _SAFE = str.maketrans({"−": "-", "→": "->", "≈": "~", " ": " ", " ": " "})
 
 
@@ -54,21 +54,13 @@ class Chart(Flowable):
         self.width, self.height = width, height
 
     def text(self, x, y, s, size=7, color=MUTED, font=SANS, anchor="left"):
-        c = self.canv
-        c.setFont(font, size)
-        c.setFillColor(color)
-        s = _s(s)
-        if anchor == "right":
-            c.drawRightString(x, y, s)
-        elif anchor == "center":
-            c.drawCentredString(x, y, s)
-        else:
-            c.drawString(x, y, s)
+        self.canv.setFillColor(color)
+        typefaces.draw(self.canv, x, y, _s(s), font, size, anchor)
 
     def legend(self, items, y):
         x = self.width
         for label, col in reversed(items):
-            w = self.canv.stringWidth(_s(label), SANS, 7)
+            w = typefaces.width(_s(label), SANS, 7)
             x -= w
             self.text(x, y, label, 7, MUTED)
             x -= 10
@@ -227,7 +219,7 @@ class BalanceStack(Chart):
                 self.text(x + bw / 2, 4, when, 6.3, MUTED, anchor="center")
         lx, ly = 0, self.height - 10
         for part, col in legend.items():
-            w = 14 + c.stringWidth(_s(part), SANS, 6.8) + 8
+            w = 14 + typefaces.width(_s(part), SANS, 6.8) + 8
             if lx and lx + w > self.width:
                 lx, ly = 0, ly - 10
             c.setFillColor(col)
@@ -397,7 +389,7 @@ class SeriesBars(Chart):
             self.text(cx, max(y0, y1) + 3, self.fmt(v), 6.5, INK, SANS_B, "center")
             # long period names on two lines: "Esercizio" / "2025", "1° sem." / "2026"
             words = label.rsplit(" ", 1)
-            if len(words) == 2 and self.canv.stringWidth(label, SANS, 6.8) > slot - 4:
+            if len(words) == 2 and typefaces.width(label, SANS, 6.8) > slot - 4:
                 self.text(cx, 11, words[0], 6.3, MUTED, anchor="center")
                 self.text(cx, 3, words[1], 6.8, INK, anchor="center")
             else:

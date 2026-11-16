@@ -8,7 +8,8 @@ from PyInstaller.utils.hooks import collect_all
 ROOT = Path(SPECPATH).parent
 ICON = str(ROOT / "packaging" / "icon.png")          # converted to .ico / .icns by PyInstaller (needs Pillow)
 
-datas, binaries, hidden = [(str(ROOT / "web"), "web")], [], ["server", "launch"]
+# the web interface, and the fonts of the PDF report (Latin, Greek, Cyrillic, Chinese, Japanese, Korean)
+datas, binaries, hidden = [(str(ROOT / "web"), "web"), (str(ROOT / "analyst" / "fonts"), "analyst/fonts")], [], ["server", "launch"]
 for pkg in ("uvicorn", "curl_cffi", "pypdfium2", "pypdfium2_raw", "pptx", "reportlab", "anthropic"):
     d, b, h = collect_all(pkg)
     datas += d
