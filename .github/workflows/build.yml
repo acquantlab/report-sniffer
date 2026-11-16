@@ -1,5 +1,6 @@
 # Builds the downloadable app for Windows, macOS and Linux.
-# A tag "v*" publishes the three archives as a GitHub release; other runs keep them as workflow artifacts.
+# A tag "v*", or a manual run with a version (Actions → Build apps → Run workflow), publishes the three archives
+# as a GitHub release; other runs keep them as workflow artifacts.
 name: Build apps
 
 on:
@@ -8,6 +9,11 @@ on:
     branches: ["**"]
     paths: ["app.py", "launch.py", "server.py", "requirements.txt", "packaging/**", ".github/workflows/build.yml"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish as a release, e.g. v1.0.0 (empty: build only)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -61,9 +67,10 @@ jobs:
           path: ReportSniffer-${{ matrix.name }}.*
           if-no-files-found: error
       - name: Publish on the release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.version || github.ref_name }}
         run: |
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Report Sniffer $GITHUB_REF_NAME" --generate-notes || true
-          gh release upload "$GITHUB_REF_NAME" ReportSniffer-${{ matrix.name }}.* --clobber
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Report Sniffer $TAG" --generate-notes || true
+          gh release upload "$TAG" ReportSniffer-${{ matrix.name }}.* --clobber
