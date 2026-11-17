@@ -12,3 +12,6 @@ python-pptx>=1.0,<2.0
 XlsxWriter>=3.1,<4.0
 # Anthropic SDK (Claude API key); the other API providers use plain HTTP, subscriptions use their own CLI
 anthropic>=2.0,<3.0
+# the app's own window: Edge WebView2 on Windows, WebKit on macOS, Qt WebEngine on Linux
+pywebview>=6.0,<7.0; sys_platform != "linux"
+pywebview[qt]>=6.0,<7.0; sys_platform == "linux"

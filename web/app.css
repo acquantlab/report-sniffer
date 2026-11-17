@@ -12,7 +12,7 @@
 * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: var(--line) var(--bg); }
 html, body { margin: 0; height: 100%; }
 body { background: var(--bg); color: var(--text); font: 13.5px/1.5 var(--mono); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
-button, input, select { font: inherit; color: inherit; border-radius: 0; }
+button, input, select, textarea { font: inherit; color: inherit; border-radius: 0; }
 button { cursor: pointer; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); padding: 5px 14px;
   font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
 button:hover { filter: brightness(1.12); }
@@ -20,14 +20,16 @@ button.key, .orig, .more { background: var(--bar); color: var(--text); border-co
 button.key:hover, .orig:hover, .more:hover, .more[aria-expanded="true"] { filter: none; border-color: var(--accent); color: var(--accent); }
 button.link { background: none; border: 0; color: var(--link); text-decoration: underline; padding: 4px; font-weight: 400; text-transform: none; letter-spacing: 0; }
 button:focus-visible, input:focus-visible, select:focus-visible, #drop:focus-visible { outline: 2px solid var(--link); outline-offset: 1px; }
-input[type=search], input[type=url], input[type=text], input[type=password], select {
+input[type=search], input[type=url], input[type=text], input[type=password], select, textarea {
   border: 1px solid var(--line); background: var(--bg); color: var(--input); padding: 6px 9px; caret-color: var(--accent);
 }
-input::placeholder { color: var(--muted); opacity: 1; }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 select { color: var(--text); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .error { color: var(--down); }
 [hidden] { display: none !important; }
+#toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 50; max-width: min(720px, 92vw);
+  background: var(--bar); color: var(--text); border: 1px solid var(--accent); padding: 6px 12px; font-size: 12.5px; overflow-wrap: anywhere; }
 .screen { min-height: 100%; }
 
 /* ---------- home ---------- */
@@ -150,7 +152,9 @@ select { color: var(--text); }
 #r-other-list li i { color: var(--accent); font-style: normal; min-width: 3.2em; text-align: right; }
 #r-warn { color: var(--muted); font-size: 11.5px; margin-top: 18px; }
 
-/* what the AI understood, at the top of the panel once the reading ends */
+/* the AI context, at the top of the panel once it is asked for */
+.ctx-status { margin: 14px 0 0; padding: 6px 10px; border: 1px dashed var(--accent); color: var(--text2); font-size: 12px; }
+.ctx-status.error { color: var(--down); border-color: var(--down); }
 #r-reading { border: 1px solid var(--accent); margin: 14px 0 6px; padding: 0 12px 6px; font-size: 12.5px; line-height: 1.5; }
 #report #r-reading h3 { margin: 0 -12px 10px; border-left: 0; background: var(--accent); color: var(--accent-ink); }
 #r-reading h3 span { font-weight: 500; }
@@ -160,6 +164,11 @@ select { color: var(--text); }
 #r-reading li { margin-bottom: 4px; }
 #r-reading li::marker, .card li::marker, .obs li::marker { color: var(--accent); }
 #r-reading .pg { font-size: 11.5px; }
+#r-reading .notes { margin: 0 0 8px; padding: 4px 8px; border-left: 2px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+#r-reading ol.news { padding-left: 1.6em; }
+#r-reading .news a { color: var(--link); }
+#r-reading .news .src { color: var(--muted); font-size: 11.5px; }
+#r-reading sup a { color: var(--link); text-decoration: none; font-size: 10.5px; }
 
 /* finale */
 #finale { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--veil); }
@@ -199,7 +208,10 @@ dialog { border: 1px solid var(--accent); background: var(--panel); color: var(-
 dialog::backdrop { background: rgba(0, 0, 0, .7); }
 dialog h2 { margin: -18px -20px 14px; padding: 6px 20px; background: var(--accent); color: var(--accent-ink); font: 700 13px/1.5 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 dialog label { display: block; margin-bottom: 14px; font-size: 12.5px; color: var(--text2); }
-dialog input, dialog select { display: block; width: 100%; margin-top: 4px; }
+dialog input, dialog select, dialog textarea { display: block; width: 100%; margin-top: 4px; }
+dialog textarea { resize: vertical; min-height: 90px; line-height: 1.45; }
+dialog label.check { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; color: var(--text); }
+dialog label.check input { width: auto; margin: 0; accent-color: var(--accent); }
 dialog small { display: block; color: var(--muted); margin-top: 4px; font-size: 11.5px; line-height: 1.45; }
 dialog .intro { margin: 0 0 14px; color: var(--text2); font-size: 12.5px; line-height: 1.5; }
 dialog .modes { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 18px; }

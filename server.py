@@ -1,6 +1,7 @@
 """Report Sniffer local server: http://127.0.0.1:8765
 
-Listens on localhost only. Long analyses run as background jobs the page polls.
+Listens on localhost only. Long analyses run as background jobs the page polls. Documents are read by rules; the
+AI is optional and only adds context to an analysis (/api/context).
 """
 from __future__ import annotations
 
@@ -100,6 +101,7 @@ def _version() -> str:
 @app.get("/", response_class=HTMLResponse)
 def index():
     html = (WEB / "index.html").read_text(encoding="utf-8").replace("__V__", _version()).replace("__UI__", ui_lang())
+    html = html.replace("__NATIVE__", "1" if os.environ.get("SNIFFER_WINDOW") == "1" else "")    # shown in the app's own window
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
 
@@ -108,7 +110,8 @@ def index():
 @app.get("/api/status")
 def status():
     cfg = sources.config()
-    return {"ai": ai.available(), "ai_name": ai.provider_name(), "ai_providers": ai.status(), "sec_user_agent": sources.sec_user_agent(),
+    return {"ai": ai.available(), "ai_name": ai.provider_name(), "ai_web": ai.can_search(), "ai_providers": ai.status(),
+            "sec_user_agent": sources.sec_user_agent(),
             "sec_ua_custom": bool(os.environ.get("SNIFFER_SEC_UA") or cfg.get("sec_user_agent")),
             "model": ai.MODEL, "ui_lang": ui_lang(), "system_lang": system_lang(),
             "langs": [{"code": c, "name": NATIVE[c]} for c in LANGS]}
@@ -161,7 +164,7 @@ def quit_app(request: Request):
 
 
 def _need_ai():
-    # every document is read with the AI: nothing starts until one is set up
+    # the AI is optional: only the context of an analysis needs it
     if not ai.available():
         raise HTTPException(409, ui("Configura prima l'AI (chiave API o abbonamento) nelle impostazioni.",
                                     "Set up the AI first (API key or subscription) in Settings."))
@@ -228,7 +231,12 @@ def _start(req: dict) -> str:
 
     def work():
         try:
-            a = pipeline.relang(req["id"], req["lang"], progress) if req["kind"] == "relang" else pipeline.run(req, progress)
+            if req["kind"] == "relang":
+                a = pipeline.relang(req["id"], req["lang"], progress)
+            elif req["kind"] == "context":
+                a = pipeline.add_context(req["id"], req["notes"], req["web"], progress)
+            else:
+                a = pipeline.run(req, progress)
             job.update(status="done", progress=1.0, step=ui("Pronto", "Ready"), analysis_id=a["id"])
         except sources.SourceError as e:
             job.update(status="error", error=str(e))
@@ -248,11 +256,10 @@ async def analyze(request: Request):
     kind = body.get("kind")
     if kind not in ("sec", "esef", "market", "url"):
         raise HTTPException(400, ui("tipo di richiesta non valido", "invalid request type"))
-    _need_ai()
     req = {k: body[k] for k in ("kind", "query", "symbol", "url", "form", "refresh", "lang") if k in body}
     if kind in ("sec", "esef") and req.get("url"):
         _doc_url(kind, str(req["url"]))
-    return {"job": _start({**req, "ai": True})}
+    return {"job": _start(req)}
 
 
 @app.post("/api/relang")
@@ -261,17 +268,27 @@ async def relang(request: Request):
     lang = body.get("lang")
     if lang not in LANGS or not re.fullmatch(r"[0-9a-f]{16}", str(body.get("id", ""))):
         raise HTTPException(400, ui("richiesta non valida", "invalid request"))
-    _need_ai()
     return {"job": _start({"kind": "relang", "id": body["id"], "lang": lang})}
+
+
+@app.post("/api/context")
+async def context(request: Request):
+    """The AI puts an analysis in context: the user's notes, and the latest news when it can search the web."""
+    body = await json_body(request)
+    aid = str(body.get("id", ""))
+    if not re.fullmatch(r"[0-9a-f]{16}", aid) or not pipeline.load(aid):
+        raise HTTPException(400, ui("richiesta non valida", "invalid request"))
+    _need_ai()
+    notes = str(body.get("notes") or "").strip()[:4000]
+    return {"job": _start({"kind": "context", "id": aid, "notes": notes, "web": body.get("web") is not False})}
 
 
 @app.post("/api/upload")
 async def upload(file: UploadFile = File(...), lang: str = Form("")):
-    _need_ai()
     data = await file.read(MAX_UPLOAD + 1)
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, ui("File troppo grande (max 400 MB)", "File too large (max 400 MB)"))
-    return {"job": _start({"kind": "upload", "data": data, "name": file.filename or "documento", "ai": True, "lang": lang})}
+    return {"job": _start({"kind": "upload", "data": data, "name": file.filename or "documento", "lang": lang})}
 
 
 @app.get("/api/job/{jid}")

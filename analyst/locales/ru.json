@@ -369,5 +369,13 @@
 "{ok} of {n} arithmetic checks pass": "Пройдено {ok} из {n} арифметических проверок",
 "{sym} gained {p} over the last year.": "{sym} вырос на {p} за последний год.",
 "{sym} lost {p} over the last year.": "{sym} упал на {p} за последний год.",
-"{typ} · market sheet as of {d}": "{typ} · рыночная справка на {d}"
+"{typ} · market sheet as of {d}": "{typ} · рыночная справка на {d}",
+"AI context": "Контекст ИИ",
+"Context by {p}: numbers about the document matched to its pages": "Контекст: {p}; числа о документе сверены со страницами",
+"Latest news": "Последние новости",
+"The news comes from its web search, each item with its link: Report Sniffer does not verify it.": "Новости взяты из его поиска в интернете, у каждой есть ссылка: Report Sniffer их не проверяет.",
+"Your notes": "Ваши заметки",
+"{ai} is putting the figures in context (this can take a minute)": "{ai} ставит цифры в контекст (это может занять минуту)",
+"{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} ставит цифры в контекст и ищет свежие новости (это может занять несколько минут)",
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} поставил цифры в контекст, прочитав {n} стр.; числа, которые он пишет о документе, сверяются со страницами."
 }

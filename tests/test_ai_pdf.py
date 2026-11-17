@@ -1,4 +1,4 @@
-"""AI providers (simulated HTTP) and PDF export (real headless Chromium when available)."""
+"""AI providers (simulated HTTP), documents read without an AI, and the PDF export."""
 import json
 import os
 import sys
@@ -38,32 +38,42 @@ def test_settings_and_active_provider(cfg, monkeypatch):
 
 
 def test_openai_compatible_call_is_validated(cfg, monkeypatch):
+    from analyst import reader
     ai.save_settings("openrouter", "sk-or-test-1234567890", "")
+    assert ai.available() and not ai.can_search()             # context, but no live news through this provider
     sent = {}
 
     def fake_post(url, headers, json, timeout):
         sent.update(url=url, headers=headers, body=json)
-        content = '```json\n{"observations": [{"text": "Revenue reached $120B, up 20.0%.", "ids": ["revenue_cur", "growth_revenue"]},' \
-                  '{"text": "Margins will double to 99%.", "ids": ["revenue_cur"]}]}\n```'
+        content = ('```json\n{"doc_type": "10-K", "summary": "Revenue reached $120B, up 20.0%. Margins will double to 99%.",'
+                   ' "sections": [], "news": [{"title": "Invented", "source": "x", "url": "https://example.com/n", "date": "", "summary": ""}]}\n```')
         return httpx.Response(200, json={"choices": [{"message": {"content": content}}]})
     monkeypatch.setattr(ai.httpx, "post", fake_post)
-    data = {"revenue_cur": {"label": "Revenue", "display": "$120B", "pages": [3]},
-            "growth_revenue": {"label": "Revenue growth", "display": "+20.0%", "pages": [3]}}
-    obs = ai.observations("Example", data)
+    figures = {"revenue_cur": {"label": "Revenue", "display": "$120B", "pages": [3]},
+               "growth_revenue": {"label": "Revenue growth", "display": "+20.0%", "pages": [3]}}
+    r = reader.contextualize("Example", {}, 0, figures, web=True)
     assert sent["url"] == "https://openrouter.ai/api/v1/chat/completions" and sent["body"]["model"] == "openrouter/auto"
     assert sent["headers"]["Authorization"] == "Bearer sk-or-test-1234567890"
-    assert [o["text"] for o in obs] == ["Revenue reached $120B, up 20.0%."]   # the invented 99% is dropped
+    assert "cannot search the web" in sent["body"]["messages"][1]["content"] and r["web"] is False
+    assert r["summary"] == "Revenue reached $120B, up 20.0%."           # the invented 99% is dropped
+    assert r["news"] == []                                          # not searched: no "news" from the model's memory
 
 
-def test_provider_error_becomes_a_warning(cfg, monkeypatch, tmp_path):
-    ai.save_settings("openai", "sk-bad-key-1234567", "")
-    monkeypatch.setattr(ai.httpx, "post", lambda *a, **k: httpx.Response(401, json={"error": {"message": "Incorrect API key"}}))
+def test_documents_are_read_without_ai_and_context_errors_are_shown(cfg, monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "DOCS", tmp_path / "docs")
     import make_fixtures
     FIX.mkdir(exist_ok=True)
     (FIX / "sec_10k.htm").write_text(make_fixtures.sec(), encoding="utf-8")
-    a = pipeline.run({"kind": "upload", "data": (FIX / "sec_10k.htm").read_bytes(), "name": "x.htm", "ai": True, "lang": "en"}, lambda *_: None)
-    assert not a["ai"] and a["findings"] and any("Incorrect API key" in w for w in a["warnings"])
+    a = pipeline.run({"kind": "upload", "data": (FIX / "sec_10k.htm").read_bytes(), "name": "x.htm", "lang": "en"}, lambda *_: None)
+    assert not ai.available() and not a["ai"] and a["reading"] is None and a["findings"] and a["card"]
+    from analyst import sources
+    with pytest.raises(sources.SourceError, match="Set up the AI"):
+        pipeline.add_context(a["id"], "", True, lambda *_: None)
+    ai.save_settings("openai", "sk-bad-key-1234567", "")
+    monkeypatch.setattr(ai.httpx, "post", lambda *a, **k: httpx.Response(401, json={"error": {"message": "Incorrect API key"}}))
+    with pytest.raises(sources.SourceError, match="Incorrect API key"):
+        pipeline.add_context(a["id"], "", True, lambda *_: None)
+    assert pipeline.load(a["id"])["reading"] is None
 
 
 def test_pdf_report(tmp_path, monkeypatch):

@@ -369,5 +369,13 @@
 "{ok} of {n} arithmetic checks pass": "計算チェック{n}項目中{ok}項目に合格",
 "{sym} gained {p} over the last year.": "{sym}は過去1年で{p}上昇。",
 "{sym} lost {p} over the last year.": "{sym}は過去1年で{p}下落。",
-"{typ} · market sheet as of {d}": "{typ} · {d}時点のマーケットシート"
+"{typ} · market sheet as of {d}": "{typ} · {d}時点のマーケットシート",
+"AI context": "AI による背景",
+"Context by {p}: numbers about the document matched to its pages": "背景：{p}。書類の数値はページと照合済み",
+"Latest news": "最新ニュース",
+"The news comes from its web search, each item with its link: Report Sniffer does not verify it.": "ニュースは AI のウェブ検索によるもので、各項目にリンクがあります。Report Sniffer は内容を検証していません。",
+"Your notes": "メモ",
+"{ai} is putting the figures in context (this can take a minute)": "{ai} が数値に背景を加えています（1 分ほどかかることがあります）",
+"{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} が数値に背景を加え、最新ニュースを検索しています（数分かかることがあります）",
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} は {n} ページを読んで数値に背景を加えました。書類について書いた数値はページと照合されています。"
 }
