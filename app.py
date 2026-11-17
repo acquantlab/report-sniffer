@@ -33,9 +33,17 @@ def selftest():
     canvas.Canvas(os.devnull).save()
     import desktop  # noqa: F401
     import webview  # noqa: F401
-    gui = {"win32": "winforms", "darwin": "cocoa"}.get(sys.platform, "qt")
     if getattr(sys, "frozen", False):              # the window's toolkit is bundled (from the source it may be GTK)
-        __import__(f"webview.platforms.{gui}")
+        if sys.platform in ("win32", "darwin"):
+            __import__("webview.platforms." + ("winforms" if sys.platform == "win32" else "cocoa"))
+        else:
+            # Qt loads the system's graphics libraries (libEGL...) when imported, which a server without a desktop
+            # lacks: check that the modules are bundled; on a desktop without them desktop.py falls back to a browser
+            import importlib.util
+            gone = [m for m in ("webview.platforms.qt", "qtpy", "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore")
+                    if importlib.util.find_spec(m) is None]
+            if gone:
+                raise SystemExit("window toolkit missing: %s" % ", ".join(gone))
     missing = [n for n in ("index.html", "app.js", "app.css", "sniffer.js", "themes.js", "i18n.js") if not (server.WEB / n).exists()]
     if missing:
         raise SystemExit("missing web files: %s" % ", ".join(missing))
