@@ -3,7 +3,7 @@
 A terminal-style reader for financial documents: an animated sniffer (a small rolled banknote) goes over a
 financial document page by page, the figures it reads are selected as in a terminal and flow into a live
 report; at the end come the key findings and a summary card. It must work for **any
-financial instrument** and run locally (macOS, Windows, Linux) in a Chromium-based browser.
+financial instrument** and run locally (macOS, Windows, Linux) as a desktop app with its own window.
 
 ## Status
 
@@ -30,7 +30,7 @@ financial instrument** and run locally (macOS, Windows, Linux) in a Chromium-bas
 - [x] `analyst/pipeline.py` — one analysis format for the web app, sanitised `view.html`
 - [x] `server.py`, `web/` — sniffer animation, pacing, live report, finale, report download; search results offer
       *Analyse* or *Download original* (`/api/original`: SEC filing, ESEF report, price history CSV)
-- [x] `launch.py` + `Start Report Sniffer.command` / `.bat` — venv, dependencies, server, Chromium browser
+- [x] `launch.py` + `Start Report Sniffer.command` / `.bat` — venv, dependencies, then the app in its own window (`app.py`, `desktop.py`)
 - [x] `app.py` + `packaging/` + `.github/workflows/build.yml` — downloadable app for Windows, macOS and Linux
 - [x] Offline tests (`tests/`): synthetic documents, simulated APIs, launcher browser choice
 - [x] Real documents, read without the AI (the deterministic layer the AI builds on), figures compared with the
@@ -47,7 +47,9 @@ financial instrument** and run locally (macOS, Windows, Linux) in a Chromium-bas
 - [x] A real AI provider: the Claude subscription through the Claude Code CLI read Netflix's 2022 10-K end to end
       (the README screenshots).
 - [ ] SEC EDGAR live: covered by simulated responses in the tests.
-- [ ] Safari / Firefox: not supported (the app shows a notice); only Chromium-based browsers are tested.
+- [x] Own window (pywebview: WebView2, WebKit, Qt WebEngine); a Chromium browser only when no window can be shown.
+- [x] AI optional: figures, checks and findings by rules; AI context (notes, latest news) on request.
+- [ ] In a browser tab, Safari and Firefox are not tested (the app shows a notice).
 
 ## Data sources
 

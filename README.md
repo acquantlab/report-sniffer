@@ -3,22 +3,24 @@
 *by AC Quant Lab*
 
 Report Sniffer reads financial documents (10-K, ESEF, PDFs, market data) and builds a live, cited report in a
-terminal-style interface. Runs locally on macOS, Windows and Linux in a Chromium browser. Free and open source under the
-[MIT license](LICENSE).
+terminal-style interface. A desktop app with its own window for macOS, Windows and Linux; everything runs on your
+computer. Free and open source under the [MIT license](LICENSE).
 
 ![The sniffer reading the income statement of Netflix's 2022 10-K while the report fills in](docs/screenshots/sniffer.gif)
 
-An AI reads every document first — what it is, how the business works, the results, the risks, the offering — and
-the sniffer, a small rolled banknote, then goes over the pages that hold what it found and
-selects the figures one by one. Every number the AI writes is checked against the page it comes from.
+The sniffer, a small rolled banknote, goes over the original pages of the document and highlights the figures one by
+one while the report fills in. **Every figure, check and finding is read and computed by rules** — no AI is needed.
+**The AI is optional**: on request it puts an analysis in context, with your own notes and, with Claude or ChatGPT,
+the latest news found on the web. Every number it writes about the document is checked against the pages.
 
 **Nine languages** — English, Italiano, Español, Français, Deutsch, Português, Русский, 中文, 日本語 — for the interface
 and for every report (in the page, PDF, PowerPoint and Excel). See [Languages](#languages).
 
 ## Screenshots
 
-Netflix's 2022 10-K (FinanceBench PDF), read by a Claude subscription through Claude Code; the texts are the AI's
-own, unedited.
+Netflix's 2022 10-K (FinanceBench PDF). These screenshots come from version 1.x, when an AI read every document:
+the reading, the card and the exports look the same today; the AI's texts now come from the optional
+[AI context](#the-ai-optional-context-and-news), and the figure is no longer typed out next to the banknote.
 
 | | |
 |---|---|
@@ -42,24 +44,31 @@ No Python and no terminal are needed.
 | macOS (Apple silicon) | `ReportSniffer-macos-arm64.zip` | unpack, move `Report Sniffer.app` to Applications, double-click it |
 | Linux (x86-64, glibc 2.39+) | `ReportSniffer-linux-x64.tar.gz` | unpack, run `ReportSniffer/ReportSniffer` |
 
-The app has no window of its own: it opens `http://127.0.0.1:8765` in a Chromium-based browser and, the first
-time, asks you to connect an AI. It keeps running until you press **Quit** in the bottom bar of the home page;
-starting it again while it runs just reopens the page. What it would print goes to `~/.report-sniffer/app.log`.
+The app opens in **its own window**, like any desktop program; closing the window quits it. The window uses the web
+view of the system: Microsoft Edge WebView2 on Windows (part of Windows 10 and 11), WebKit on macOS (the engine of
+Safari), Qt WebEngine on Linux (bundled). No AI is needed to start: connect one in **Settings** whenever you want the
+[AI context](#the-ai-optional-context-and-news). Starting the app again while it runs opens one more window. What it
+would print goes to `~/.report-sniffer/app.log`.
+
+If the system cannot show the window (Windows without WebView2; Linux without a display or without the X11 libraries
+Qt needs, such as `libxcb-cursor0` and `libxkbcommon-x11-0`), the app opens `http://127.0.0.1:8765` in a
+Chromium-based browser instead, and stops from **Quit** in the bottom bar of the home page.
 
 - The builds are **not code-signed**. On macOS the first start is blocked ("cannot be verified"): go to
   *System Settings → Privacy & Security* and click *Open Anyway*. Windows shows "Windows protected your PC":
   click *More info → Run anyway*.
 - Intel Macs and other systems: run it from the source (below).
+- The Linux download is larger (about 250 MB packed) because it carries Qt WebEngine; Windows and macOS use the web
+  view the system already has.
 - The apps are built by GitHub Actions (`.github/workflows/build.yml`) whenever a tag `v…` is pushed.
 
 ## Requirements
 
-- **A Chromium-based browser**: Chrome, Brave, Edge, Arc, Vivaldi or Opera.
-  **Safari and Firefox are not supported** — the page loads but the document is not read.
-  The app opens a Chromium browser on its own (your default one if it is Chromium-based).
-- macOS, Windows or Linux.
-- **An AI** (asked on the first start, required): your Claude Pro/Max or ChatGPT subscription, or an API key — see
-  [The AI](#the-ai-required).
+- macOS, Windows 10/11 or Linux. Nothing else: the window uses the system's web view (see [Download](#download)).
+  Only when that is missing does the page open in a browser, and then it must be a Chromium-based one (Chrome, Brave,
+  Edge, Arc, Vivaldi, Opera); the reading in a browser tab is tested with Chromium only.
+- **An AI is optional**: your Claude Pro/Max or ChatGPT subscription, or an API key, for the
+  [AI context](#the-ai-optional-context-and-news).
 - Only to run from the source: **Python 3.10 or newer** — [python.org/downloads](https://www.python.org/downloads/)
   (on Windows tick *Add python.exe to PATH*; on a Mac `brew install python` also works).
 
@@ -70,15 +79,17 @@ starting it again while it runs just reopens the page. What it would print goes 
 | macOS / Linux | `Start Report Sniffer.command` | `python3 launch.py` |
 | Windows | `Start Report Sniffer.bat` | `py launch.py` |
 
-The first start creates a virtual environment (`.venv`), installs the dependencies (1–2 minutes) and asks for a
-name and email to identify yourself to the SEC (optional). Then the app opens at `http://127.0.0.1:8765` and, the first time, asks you to connect an AI.
-Close the terminal window (or press Ctrl+C, or **Quit** on the home page) to stop it.
+The first start creates a virtual environment (`.venv`), installs the dependencies (1–2 minutes; on Linux also Qt
+WebEngine, about 200 MB, unless PyGObject with WebKitGTK is installed) and asks for a name and email to identify
+yourself to the SEC (optional). Then the app opens in its own window. Close the window (or the terminal window, or
+press Ctrl+C) to stop it.
 
 - **macOS blocks the double-click** ("cannot be verified"): use `python3 launch.py` from Terminal, or go to
   *System Settings → Privacy & Security*, click *Open Anyway* at the bottom and try again.
 - **Windows shows "Windows protected your PC"**: click *More info → Run anyway*, or use `py launch.py`.
-- Options (also for the downloaded app): `SNIFFER_PORT=9000` changes the port, `SNIFFER_LANG=de` (or any [language](#languages) code) forces the interface language, `SNIFFER_BROWSER="Brave Browser"` (macOS app name, or an
-  executable path elsewhere) forces a browser, `--no-browser` starts only the server.
+- Options (also for the downloaded app): `SNIFFER_PORT=9000` changes the port, `SNIFFER_LANG=de` (or any [language](#languages) code) forces the interface language, `--no-window` starts only the server (open
+  `http://127.0.0.1:8765` in a Chromium browser yourself), `SNIFFER_BROWSER="Brave Browser"` (macOS app name, or an
+  executable path elsewhere) chooses the browser used when no window can be shown.
 - To build the app yourself: `pip install -r requirements.txt pyinstaller`, then
   `pyinstaller --noconfirm packaging/report_sniffer.spec` (the result is in `dist/`).
 
@@ -90,7 +101,7 @@ Close the terminal window (or press Ctrl+C, or **Quit** on the home page) to sto
 | Companies before an IPO (no ticker yet) | Latest S-1, F-1 or 424B prospectus (tagged or not) | SEC EDGAR full-text search |
 | European companies (Ferrari, ENI, …) | ESEF annual report in inline XBRL; earlier years under *Other documents* | filings.xbrl.org |
 | Crypto, indices, currencies, commodities, ETFs, funds (BTC-USD, ^GSPC, EURUSD=X, GC=F, …) | A generated market sheet: chart, calendar-year and monthly returns, volatility, drawdowns | Yahoo Finance (Coinbase as fallback for crypto) |
-| Any other document: annual report or statements as PDF/HTML, KID, prospectus, factsheet, whitepaper (statement lines are recognised by rule in English and Italian, by the AI in any language) | The file you upload (*Upload a document*) or the URL you paste | Your file / URL |
+| Any other document: annual report or statements as PDF/HTML, KID, prospectus, factsheet, whitepaper (statement lines are recognised by rule in English and Italian; in other languages the figures are still read and highlighted, with fewer statement lines recognised) | The file you upload (*Upload a document*) or the URL you paste | Your file / URL |
 
 **Not in the search** (the home page says so too): Italian half-year reports and other documents not filed in ESEF, accounts of
 unlisted companies (business register), fund KIDs and factsheets — upload the PDF or paste its address.
@@ -123,8 +134,7 @@ In untagged PDF/HTML the figures are the ones printed on the page:
   order (2022 2023 2024 or the reverse), quarter codes (1Q23 vs 1Q22), "Three Months Ended", "Thirteen Weeks Ended",
   "Second Quarter", dates printed on a line of their own; note-reference and "% to sales" columns are left out, labels
   wrapped onto two lines are joined, the consolidated statements win over the parent-company ones and over segment
-  tables. Statement lines no rule knows are recognised by the AI, whose values are checked against the page before
-  they feed the card, checks and charts.
+  tables.
 - **Banks and insurers**: net interest and other banking income, total net revenue, insurance revenue (IFRS 17) count
   as revenue; free cash flow is not computed for them (capex means little for a bank's cash flow statement).
 - **ESEF reports** laid out with page containers (`pf`, `page…` classes, nested) or with no pages at all (the text
@@ -132,8 +142,9 @@ In untagged PDF/HTML the figures are the ones printed on the page:
 
 ## Report
 
-- **What the AI understood**: the kind of document, a short summary and the key points by theme (business, results,
-  cash, risks, offering, ownership…), each with its pages — in the side panel at the end of the reading and in the PDF.
+- **AI context** (optional, see [below](#the-ai-optional-context-and-news)): the kind of document, a short summary,
+  key points by theme (results in context, what the news changes, risks, your questions…) with their pages, your
+  notes, and the latest news with its link — in the side panel, the PDF, the slides and the workbook.
 - **Card (financial statements)**: revenue, net income (or net loss), diluted EPS, free cash flow (operating cash flow −
   capex, marked as computed), each with the exact amount, the change against the comparative period ("+1,300% vs
   H1 2025") — or the comparative value when a loss makes a percentage meaningless — and the page.
@@ -146,34 +157,36 @@ In untagged PDF/HTML the figures are the ones printed on the page:
 - **Findings**: growth, margins, cash conversion, shareholder returns, interest coverage, debt due vs cash,
   liquidity, leverage — deterministic calculations on the document's figures.
 - **Language**: any of the [nine languages](#languages), chosen on the home page or while reading (the report is
-  regenerated: the AI's texts, findings, checks, labels, periods, number formats — `$120B`, `$120 mld`, `$120 Mrd.`, `$1,200亿`).
+  regenerated: findings, checks, labels, periods, number formats — `$120B`, `$120 mld`, `$120 Mrd.`, `$1,200亿`; the
+  AI context is asked for again in the new language).
 - **Download** (menu in the reading view): *Report (PDF)*; *Slides (PowerPoint)* — a 16:9 deck with native, editable charts,
   every slide citing the printed pages and the source; *Figures (Excel)* — statements as numbers with unit and page, changes
   and free cash flow as formulas, ratios, checks, every figure read (prices and returns for market sheets).
   The PDF is drawn on white, with the accent colour of the chosen theme, by the local server
   in a fraction of a second (no browser involved). Names and texts in Latin, Greek, Cyrillic, Chinese, Japanese and
   Korean script are printed as they are (the fonts are embedded). No pages of raw figures: it holds
-  - the summary card, the AI's summary and the key findings;
+  - the summary card, the key findings and, when asked for, the AI's summary;
   - **financial highlights**: income statement, balance sheet and cash flows with the two periods compared, the change
     and the page of each line;
   - charts: revenue and net income over every period the document prints (years, then the latest interim pair),
     results against the comparative period, margins, balance sheet (side by side when there is a deficit or
     redeemable preferred stock), where the operating cash goes; for market sheets the price chart, calendar-year
     returns, drawdown and the monthly-returns heatmap;
-  - what the AI understood section by section, key ratios, the arithmetic checks with their pages, and how the
-    document was read (pages shown, pages the AI read, periods compared).
+  - the AI context section by section with the news and its links (when asked for), key ratios, the arithmetic
+    checks with their pages, and how the document was read (pages shown, periods compared, what the AI read).
 - **Themes**: Terminal (amber on black, the default), Phosphor (green), Desk (blue) and Paper (light) — the swatches
   in the bottom bar of the home page and in the reading bar change the interface, the sniffer, the highlights and
-  the accent colour of the PDF and the slides; the choice is remembered in the browser.
+  the accent colour of the PDF and the slides; the choice is remembered by the app.
 
 ## The sniffer
 
-A small rolled banknote lying on its side, drawn with a few thin lines. Its nose stops at the left edge of each
-figure, on its line. The figure is selected as in a terminal: the highlight steps over it one character at a time
-behind a caret, stays while the figure is read, then settles into a thin underline (a slightly stronger one for the
-headline figures); at the same time the figure is typed out, with a block cursor, in a small readout above the roll.
-Headings are selected the same way in the second colour. The roll glides from figure to figure with eased movements, left to right and down the
-page; there are no boxes and nothing flashes.
+A small rolled banknote lying on its side, drawn with a few thin lines. It moves over **the original document** — the
+page images of a PDF, the filing's own HTML pages — and its nose stops at the left edge of each figure, on its line,
+lighting up while it reads. Nothing is written next to the roll: the figure is selected where it is printed, as in a
+terminal — the highlight steps over it one character at a time behind a caret — and then **stays highlighted**, with
+an underline (stronger for the headline figures), so every figure read remains marked on the page. Headings are
+selected the same way in the second colour. The roll glides from figure to figure with eased movements, left to right
+and down the page; there are no boxes and nothing flashes.
 
 It always reads **every** figure on the pages it opens and adapts its pace to how many there are (about
 7 seconds for a short document, up to about 35 seconds for a long one); the headline figures (revenue, net income,
@@ -195,12 +208,12 @@ with the financial statements and the key figures).
 | `zh` | 中文（简体） | 1,234.5 | $163亿 | 2026年6月30日 |
 | `ja` | 日本語 | 1,234.5 | $163億 | 2026年6月30日 |
 
-- **Interface**: the *Interface* menu in the bottom bar of the home page (remembered in the browser); by default the
+- **Interface**: the *Interface* menu in the bottom bar of the home page (remembered by the app); by default the
   operating system's language when it is one of these, else English. The app's messages (progress, errors) follow it.
 - **Report**: the *Report language* menu on the home page or in the reading bar. Everything the report says is in that
-  language — the AI writes its summary, key points and findings in it, and the page, the PDF, the slides and the
-  workbook use its words, periods (`FY2025`, `Esercizio 2025`, `GJ 2025`, `2025财年`…), number and date formats.
-  Figures quoted from the document stay as printed.
+  language: the page, the PDF, the slides and the workbook use its words, periods (`FY2025`, `Esercizio 2025`,
+  `GJ 2025`, `2025财年`…), number and date formats, and the AI context is written in it. Figures quoted from the
+  document stay as printed.
 - The PDF embeds fonts for Latin, Greek, Cyrillic, Chinese, Japanese and Korean, so names in those scripts are printed
   whatever the report language. Arabic and Hindi are not offered: the PDF cannot lay out right-to-left or joined
   scripts.
@@ -208,9 +221,35 @@ with the financial statements and the key figures).
   completeness and placeholders, not by native speakers: corrections are welcome. A text added to the code in Italian
   and English must be added to every catalog (`tests/test_i18n.py` fails until it is).
 
-## The AI (required)
+## The AI (optional): context and news
 
-The first time the page opens it asks how to connect an AI, and checks that it answers. Two ways:
+Report Sniffer reads every figure, runs every check and writes every finding by rules, with no AI. When you want more,
+press **AI context** in the reading bar: you can add your own notes (what you want to know, your view, what to compare)
+and, if the AI in use can search the web, ask for the latest news. The AI gets:
+
+- the figures Report Sniffer read (headline figures, statements, ratios and changes) and the findings computed from them;
+- the text of the pages — all of them when they fit in about 65k tokens, otherwise the cover, the summary sections
+  (prospectus summary, risk factors, MD&A…), the statements and the pages densest with figures;
+- your notes;
+
+and returns the kind of document, a summary, key points by theme and the news it found. It runs while the reading goes
+on; the result appears in the side panel and in the PDF, slides and workbook, and stays with the analysis.
+
+**What is checked.** A sentence is kept only if each of its numbers is printed in the pages read, among the figures
+Report Sniffer gave it or in your notes — or in the news item it cites. A news item is kept only with its web address;
+with the Claude API, only an address its web search actually returned. News is shown as found, with its source and
+link: Report Sniffer does not verify what the articles say. The figures, card, checks and charts never come from the AI.
+
+**Where the news comes from.**
+
+| AI | Web search |
+|---|---|
+| Claude, API key | Anthropic's web search tool, at most 6 searches per request (billed by Anthropic: $10 per 1,000 searches plus tokens — [docs](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool)) |
+| Claude subscription (Claude Code) | Claude Code's own *WebSearch* and *WebFetch* tools, the only tools it is given |
+| ChatGPT subscription (Codex) | Codex's live web search (`web_search = "live"`), in a read-only sandbox |
+| OpenAI, Gemini, Mistral, xAI, DeepSeek, OpenRouter (API keys) | none from Report Sniffer: context from your notes and the document only, no news |
+
+Connect the AI in **Settings** (the *AI: off* label at the top right of the home page opens them too). Two ways:
 
 **A subscription you already have.** Report Sniffer runs the vendor's official command-line tool, which you install
 and sign in to yourself; the app never sees or stores your credentials, and the usage counts toward your plan's limits.
@@ -220,15 +259,17 @@ and sign in to yourself; the app never sees or stores your credentials, and the 
 | Claude Pro / Max | [Claude Code](https://claude.com/product/claude-code) | install it, run `claude`, sign in with your Claude account |
 | ChatGPT Plus / Pro | [Codex CLI](https://github.com/openai/codex) | `npm install -g @openai/codex`, run `codex`, choose *Sign in with ChatGPT* |
 
-The tool runs with no tools enabled (Claude Code: `--tools ""`) or in a read-only sandbox (Codex), in an empty
-folder, and must return JSON that matches the expected schema.
+The tool runs in an empty folder and must return JSON that matches the expected schema. Claude Code gets no tools
+(`--tools ""`), or only its web search and web fetch when news is asked for, and no MCP servers (`--strict-mcp-config`);
+Codex runs in a read-only sandbox. The *Model* field takes the tool's own model names (for Claude Code e.g. `sonnet`
+or `claude-sonnet-5-5`); empty means the tool's default.
 
 > Terms: Anthropic's [Claude Code legal page](https://code.claude.com/docs/en/legal-and-compliance) says that
-> third-party developers may not "route requests through Free, Pro, or Max plan credentials on behalf of their users",
-> while it does not prevent an end user from signing in to the unmodified Claude Code binary with their own
-> subscription. Report Sniffer does the latter (your own Claude Code, your own account, on your computer), but whether
-> this kind of use fits your plan is for you to judge; Anthropic advises an API key for products built on Claude. If
-> in doubt, use an API key.
+> third-party developers may not "route requests through Free, Pro, Max, or Ultra plan credentials on behalf of their
+> users", while it does not prevent "an end user from signing in to the unmodified Claude Code binary with their own
+> Claude subscription". Report Sniffer does the latter (your own Claude Code, your own account, on your computer); the
+> same page notes that plan limits "assume ordinary, individual usage". Whether this kind of use fits your plan is for
+> you to judge; for products built on Claude, Anthropic advises an API key. If in doubt, use an API key.
 
 **An API key** (billed by the provider to your account):
 
@@ -242,21 +283,17 @@ folder, and must return JSON that matches the expected schema.
 | DeepSeek | `deepseek-chat` | platform.deepseek.com · `DEEPSEEK_API_KEY` |
 | OpenRouter (any model it offers) | `openrouter/auto` | openrouter.ai · `OPENROUTER_API_KEY` |
 
-**What the AI gets and what is checked.** The text of the pages — all of them when they fit in about 65k tokens,
-otherwise the cover, the summary sections (prospectus summary, risk factors, MD&A, use of proceeds…) and the pages
-densest with financial figures — plus, for XBRL filings, the tagged figures already read. It returns the kind of
-document, a summary, key points by theme, up to 30 important figures with their page, and findings. A figure is kept
-only if its value is printed on the page it cites; a sentence is kept only if each of its numbers is printed in the
-pages read (a finding: in the figures it cites). So the report never shows numbers the document does not contain.
-If the AI fails (network, limits), the reading goes on with the rule-based extraction and the report says so.
-
 Keys and the choice of provider are stored in `~/.report-sniffer/ai.json` (readable only by you) or read from the
 environment variables above.
 
 ## Data and privacy
 
 The server listens on `127.0.0.1` only. Documents and responses are cached in `.data/` (in `~/.report-sniffer/data/` by the downloaded app). The SEC identity is in
-`~/.report-sniffer/config.json`; the default is generic and no email is sent unless you enter one.
+`~/.report-sniffer/config.json`; the default is generic and no email is sent unless you enter one. The window keeps
+its settings (interface language, theme) in `~/.report-sniffer/webview/`.
+
+Nothing goes to an AI unless you press **Run** in *AI context*: then the figures, the text of the pages read and your
+notes are sent to the provider you chose (or to its command-line tool), under that provider's terms.
 
 ### Security
 
@@ -269,20 +306,27 @@ The server listens on `127.0.0.1` only. Documents and responses are cached in `.
   interface; in the Excel export it is always stored as text, never as a formula.
 - **API keys** are stored in `~/.report-sniffer/ai.json`, created readable by you only (`0600`), or read from the
   environment variables above. Subscriptions use the vendor's own CLI: the app never sees those credentials.
+- **The window** shows only the app's own local page; links to news open in your browser. Files are saved through the
+  system's Save dialog. On Linux, where the system forbids Chromium's sandbox to apps without an AppArmor profile
+  (Ubuntu 24.04 and later) or when run as root, Qt WebEngine runs without that sandbox; documents are still shown
+  sanitised, without scripts, under the Content Security Policy above.
 
 ## Known limits
 
 - A document already read is kept in `.data/` (`~/.report-sniffer/data/` for the downloaded app); after an update of Report Sniffer it is read again (the cache key
   includes the version of the reading).
-- The AI reading takes from a few seconds to a couple of minutes for a long prospectus, and costs what the provider
-  charges for about 65k input tokens (or counts toward your subscription's limits). Each report language is a new reading.
+- The AI context takes from a few seconds to a few minutes (longer with web search), and costs what the provider
+  charges for up to about 65k input tokens plus the searches (or counts toward your subscription's limits). Each
+  report language needs its own context.
+- Statement lines in untagged PDFs and HTML are recognised by rule in English and Italian only; in other languages
+  the card, checks and charts may have fewer lines (the figures are still read and highlighted).
 - Financial figures depend on the issuer's tags: rare or custom concepts may be missing (the card shows "—").
 - Documents up to 400 MB (a large ESEF report such as Enel's is 130 MB and takes about 10 s and 700 MB of memory).
   filings.xbrl.org and SEC EDGAR answer "busy" (HTTP 429/503) at times: the app waits and retries three times.
 - Untagged PDFs are read from their layout: a statement printed as an image (a scan) has no text to read, and an
   unusual layout can leave a line unread or take it from another table; the page of every figure is shown so it can
   be checked. Checked on 44 real SEC filings and earnings releases (FinanceBench) and 21 ESEF reports. A diluted EPS row labelled only by a section header above it ("Earnings per share — diluted:")
-  is often left to the AI.
+  may be missed.
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
@@ -294,13 +338,14 @@ The server listens on `127.0.0.1` only. Documents and responses are cached in `.
 ## Project layout
 
 ```
-app.py                        entry point of the downloadable app (server in-process, browser, no terminal)
+app.py                        entry point of the app (server in-process, its own window, no terminal)
+desktop.py                    the app's window (pywebview: WebView2, WebKit, Qt WebEngine) and its Save dialog
 packaging/                    PyInstaller recipe and icon of the app; .github/workflows/build.yml builds it
-launch.py                     launcher to run from the source (venv, dependencies, server, Chromium browser)
+launch.py                     launcher to run from the source (venv, dependencies, then app.py; browser fallback)
 Start Report Sniffer.command  macOS/Linux double-click wrapper
 Start Report Sniffer.bat      Windows double-click wrapper
 server.py                     FastAPI server (localhost only)
-analyst/                      sources, iXBRL parser, tables, financials, statements, market sheet, PDF/HTML, AI providers and reader, PDF report, charts and themes, i18n
+analyst/                      sources, iXBRL parser, tables, financials, statements, market sheet, PDF/HTML, AI providers and context (reader.py), PDF report, charts and themes, i18n
 analyst/locales/              translations of the reports and messages (one JSON catalog per language, keyed by the English text)
 analyst/fonts/                fonts embedded in the PDF report, with their licenses
 web/                          interface (texts in web/i18n.js), sniffer animation, live report
