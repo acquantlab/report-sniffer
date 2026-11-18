@@ -8,6 +8,9 @@ applyTheme(savedTheme());
 // chosen in the page (a cookie the server reads), else the operating system's language when the app has it, else English
 
 const UI_LANG = LANGS.includes(document.documentElement.lang) ? document.documentElement.lang : "en";
+// in the app's own window (not a browser tab): no Quit button (closing the window quits) and files are saved
+// through the system's Save dialog
+const IN_WINDOW = document.documentElement.dataset.native === "1";
 const tr = (k, ...a) => { const v = UI[UI_LANG][k] ?? UI.en[k]; return typeof v === "function" ? v(...a) : v; };
 
 function applyUI() {
@@ -92,6 +95,42 @@ async function refreshStatus() {
   st.classList.toggle("off", !state.status?.ai);
 }
 
+// saves a file the server makes (report, slides, workbook, original document): in the app's window through the
+// system's Save dialog, in a browser as a normal download
+async function saveFile(url, fallbackName = "") {
+  const bridge = window.pywebview?.api;
+  if (IN_WINDOW && bridge?.save) {
+    const r = await bridge.save(url);
+    if (r?.error) throw new Error(r.error);
+    if (r?.path) toast(tr("saved", r.path));
+    return;
+  }
+  const res = await fetch(url);
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { msg = (await res.json()).detail || msg; } catch {}
+    throw new Error(msg);
+  }
+  const cd = res.headers.get("content-disposition") || "";
+  // filename* holds the real name (Greek, Japanese…); filename="…" its ASCII spelling
+  const star = (cd.match(/filename\*=UTF-8''([^;]+)/i) || [])[1];
+  let name = (cd.match(/filename="([^"]+)"/) || [])[1] || fallbackName || "document";
+  try { if (star) name = decodeURIComponent(star); } catch { /* malformed: keep the ASCII name */ }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await res.blob());
+  link.download = name;
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 20000);
+}
+
+function toast(msg) {
+  let el = document.getElementById("toast");
+  if (!el) { el = document.createElement("div"); el.id = "toast"; el.setAttribute("role", "status"); document.body.append(el); }
+  el.textContent = msg; el.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { el.hidden = true; }, 5000);
+}
+
 let searchSeq = 0;
 $("#search-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -162,22 +201,7 @@ async function downloadOriginal(btn) {
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = tr("orig_busy");
   try {
-    const r = await fetch(btn.dataset.orig);
-    if (!r.ok) {
-      let msg = r.statusText;
-      try { msg = (await r.json()).detail || msg; } catch {}
-      throw new Error(msg);
-    }
-    const cd = r.headers.get("content-disposition") || "";
-    // filename* holds the real name (Greek, Japanese…); filename="…" its ASCII spelling
-    const star = (cd.match(/filename\*=UTF-8''([^;]+)/i) || [])[1];
-    let name = (cd.match(/filename="([^"]+)"/) || [])[1] || "document";
-    try { if (star) name = decodeURIComponent(star); } catch { /* malformed: keep the ASCII name */ }
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(await r.blob());
-    link.download = name;
-    document.body.append(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(link.href), 20000);
+    await saveFile(btn.dataset.orig);
   } catch (err) {
     alert(tr("orig_failed") + " " + err.message);
   } finally {
@@ -213,13 +237,11 @@ async function upload(f) {
   const fd = new FormData();
   fd.append("file", f);
   fd.append("lang", $("#opt-lang").value);
-  if (!state.status?.ai) return openSettings(true);
   show("loading"); loadingReset(tr("uploading", f.name));
   try { const { job } = await api("/api/upload", { method: "POST", body: fd }); await follow(job); } catch (err) { loadingError(err.message); }
 }
 
 async function start(req) {
-  if (!state.status?.ai) return openSettings(true);
   req.lang = $("#opt-lang").value;
   show("loading"); loadingReset(tr("preparing"));
   try { const { job } = await postJSON("/api/analyze", req); await follow(job); } catch (err) { loadingError(err.message); }
@@ -254,7 +276,7 @@ async function loadRecent() {
   } catch { /* server not ready */ }
 }
 
-// settings; the first time (no AI yet) the same dialog is the required setup
+// settings: the AI (optional, for the context of an analysis) and the SEC identity
 const SUB_HELP = { claude_code: "sub_claude", codex: "sub_codex" };
 const SUB_CMD = { claude_code: "claude", codex: "codex" };
 function providerInfo(id) {
@@ -278,13 +300,9 @@ function showProvider(id) {
   $("#set-key").placeholder = p.has_key ? "••••••••" : { anthropic: "sk-ant-…", openai: "sk-…", openrouter: "sk-or-…", gemini: "AIza…" }[id] || "";
   $("#key-state").textContent = p.has_key ? tr("key_saved") : tr("key_info");
 }
-async function openSettings(setup = false) {
+async function openSettings() {
   await refreshStatus();
-  setup = setup || !state.status?.ai;
   const dlg = $("#settings");
-  dlg.dataset.setup = setup ? "1" : "";
-  $("#set-title").textContent = tr(setup ? "setup_title" : "settings");
-  $("#set-intro").hidden = !setup; $("#set-close").hidden = setup;
   $("#set-ua").value = state.status?.sec_ua_custom ? state.status.sec_user_agent : "";
   const prov = state.status?.ai_providers?.providers || [];
   const opt = (p) => `<option value="${esc(p.id)}">${esc(p.name)}${p.has_key || p.installed ? " ✓" : ""}</option>`;
@@ -297,8 +315,8 @@ async function openSettings(setup = false) {
   showMode(act && !providerInfo(act)?.cli ? "key" : "sub");
   if (!dlg.open) dlg.showModal();
 }
-$("#open-settings").addEventListener("click", () => openSettings(false));
-// the packaged app has no terminal window to close: it stops from here
+$("#open-settings").addEventListener("click", () => openSettings());
+// in a browser tab the app has no window to close: it stops from here
 $("#quit").addEventListener("click", async () => {
   state.director?.stop();
   try { await postJSON("/api/quit", {}); } catch { /* already stopped */ }
@@ -306,12 +324,10 @@ $("#quit").addEventListener("click", async () => {
   bye.className = "bye"; bye.textContent = tr("stopped");
   document.body.replaceChildren(bye);
 });
-$("#ai-state").addEventListener("click", () => openSettings(false));
+$("#ai-state").addEventListener("click", () => openSettings());
 for (const r of document.querySelectorAll("input[name=aimode]")) r.addEventListener("change", () => showMode(r.value));
 $("#set-sub").addEventListener("change", () => showProvider($("#set-sub").value));
 $("#set-provider").addEventListener("change", () => showProvider($("#set-provider").value));
-// the setup cannot be dismissed until an AI works
-$("#settings").addEventListener("cancel", (e) => { if ($("#settings").dataset.setup) e.preventDefault(); });
 $("#set-save").addEventListener("click", async () => {
   const sub = document.querySelector("input[name=aimode]:checked")?.value !== "key";
   const pid = sub ? $("#set-sub").value : $("#set-provider").value;
@@ -329,8 +345,8 @@ $("#set-save").addEventListener("click", async () => {
     await refreshStatus();
     ok.textContent = tr("connected", r.provider);
     await sleep(900);
-    $("#settings").dataset.setup = "";
     $("#settings").close();
+    if (state.ctxPending) { state.ctxPending = false; openContext(); }
   } catch (err) {
     ok.hidden = true; msg.textContent = err.message; msg.hidden = false;
     await refreshStatus();
@@ -369,6 +385,52 @@ function dlMenu(open) {
   $("#dl-menu").hidden = !open;
   $("#download").setAttribute("aria-expanded", String(open));
 }
+// ------------------------------------------------------------------ AI context (optional)
+// The figures are read by rules; on request an AI puts them in context with the user's notes and, when it can
+// search the web, the latest news. It runs while the reading goes on; the side panel shows the result.
+
+async function openContext() {
+  await refreshStatus();
+  const on = !!state.status?.ai, web = !!state.status?.ai_web;
+  $("#ctx-noai").hidden = on; $("#ctx-form").hidden = !on;
+  $("#ctx-run").hidden = !on; $("#ctx-settings").hidden = on;
+  $("#ctx-web").checked = web; $("#ctx-web").disabled = !web;
+  $("#ctx-noweb").hidden = web;
+  $("#ctx-notes").value = state.analysis?.reading?.notes ?? $("#ctx-notes").value;
+  if (!$("#ctx").open) $("#ctx").showModal();
+}
+$("#ctx-open").addEventListener("click", openContext);
+$("#ctx-settings").addEventListener("click", () => { $("#ctx").close(); state.ctxPending = true; openSettings(); });
+$("#ctx-run").addEventListener("click", async () => {
+  const a = state.analysis;
+  if (!a) return;
+  $("#ctx").close();
+  const status = $("#r-ctx-status"), btn = $("#ctx-open");
+  status.classList.remove("error"); status.textContent = tr("ctx_wait"); status.hidden = false; btn.disabled = true;
+  $("#report").scrollTop = 0;
+  try {
+    const { job } = await postJSON("/api/context", { id: a.id, notes: $("#ctx-notes").value.trim(), web: $("#ctx-web").checked });
+    for (;;) {
+      const j = await api("/api/job/" + job);
+      status.textContent = j.step;
+      if (j.status === "error") throw new Error(j.error);
+      if (j.status === "done") break;
+      await sleep(600);
+    }
+    const fresh = await api("/api/doc/" + a.id);
+    if (state.analysis?.id !== a.id) return;              // another document was opened meanwhile
+    Object.assign(a, { reading: fresh.reading, ai: fresh.ai, ai_provider: fresh.ai_provider });
+    status.hidden = true;
+    showReading(a);
+    if (state.director?.done) {                           // the card is already up: its footer names the AI now
+      $("#finale").innerHTML = cardHTML(a, state.director.count);
+      $("#finale .card")?.classList.add("in");
+    }
+  } catch (err) {
+    status.textContent = err.message; status.classList.add("error");
+  } finally { btn.disabled = false; }
+});
+
 $("#lang2").addEventListener("change", async () => {
   const a = state.analysis, lang = $("#lang2").value;
   $("#opt-lang").value = lang;
@@ -392,6 +454,8 @@ async function openAnalysis(id) {
   $("#r-pages").textContent = a.total_pages > shown.length ? T.pages_some(shown.map(pageLabel).join(", "), a.total_pages) : T.pages_all(a.total_pages);
   $("#r-warn").textContent = (a.warnings || []).join(" ");
   $("#r-reading").hidden = true; $("#r-reading").innerHTML = "";
+  $("#r-ctx-status").hidden = true; $("#ctx-notes").value = "";
+  if (a.reading) showReading(a);                     // context asked for earlier
   state.director?.stop();
   await new Promise((res) => { iframe.onload = res; iframe.src = `/api/doc/${id}/view`; });
   state.director = new Director(a);
@@ -634,8 +698,8 @@ class Director {
     if (this.playing) this.raf = requestAnimationFrame((tt) => this.frame(tt));
   }
 
-  // a stop is reached: the figure (or heading) becomes the live selection, the previous one settles,
-  // and the sniffer types the figure out
+  // a stop is reached: the figure (or heading) becomes the live selection and the previous one settles;
+  // the nose of the sniffer lights up (the figure is read where it is printed, nothing is written next to the roll)
   arrive(g) {
     const s = g.s, now = this.clock;
     if (s.first && s.page !== this.page) this.enterPage(s.page);
@@ -648,7 +712,7 @@ class Director {
     if (s.type !== "f") return;
     const lk = s.label && `${Math.round(s.label.x)}|${Math.round(s.label.y)}`;
     if (lk && !this.labelled.has(lk)) { this.labelled.add(lk); this.marks.push({ kind: "label", r: s.label, t: now }); }
-    this.sniffer.sniff(s.el.textContent.trim() || s.fact.value_fmt);
+    this.sniffer.sniff();
     this.count++;
     $("#r-n").textContent = this.count.toLocaleString(L().locale);
     this.report(s);
@@ -691,7 +755,8 @@ class Director {
   }
 
   // Marks, like a selection in a terminal: the highlight steps over the figure one character cell at a time behind a caret,
-  // stays while the figure is read, then settles into a thin underline. No boxes.
+  // stays while the figure is read, then settles into a lighter highlight with an underline that stays: every figure
+  // read remains clearly marked on the original page. No boxes.
   draw() {
     const s = this.scale, dpr = this.dpr, now = this.clock, th = theme(), U = this.U;
     const set = (ctx) => { ctx.setTransform(dpr * s, 0, 0, dpr * s, -this.cam.x * s * dpr, -this.cam.y * s * dpr); };
@@ -719,14 +784,14 @@ class Director {
         continue;
       }
       const rest = mk === this.cur ? 0 : smooth(Math.min(1, (now - (mk.t1 ?? mk.t)) / settle));
-      const color = mk.kind === "head" ? th.sight : th.ping, quiet = mk.kind === "head" ? 0.06 : mk.key ? 0.16 : 0.05;
-      m.fillStyle = rgba(color, 0.36 + (quiet - 0.36) * rest);
+      const color = mk.kind === "head" ? th.sight : th.ping, quiet = mk.kind === "head" ? 0.08 : mk.key ? 0.34 : 0.24;
+      m.fillStyle = rgba(color, 0.42 + (quiet - 0.42) * rest);
       m.fillRect(x, r.y, w, r.h);
       m.fillStyle = color;
-      m.fillRect(x, r.y + r.h + 0.5 * U, w, Math.max(1, (mk.key ? 2 : 1.2) * U));
+      m.fillRect(x, r.y + r.h + 0.5 * U, w, Math.max(1, (mk.key ? 2.2 : 1.5) * U));
     }
 
-    // above the page: the caret of the live selection and the sniffer with its readout
+    // above the page: the caret of the live selection and the sniffer
     const c = liveCv.getContext("2d");
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, liveCv.width, liveCv.height);
@@ -769,13 +834,21 @@ class Director {
   }
 }
 
-// what the AI understood, in the side panel: kind of document, summary, sections of key points
+// the AI context, in the side panel: kind of document, summary, key points by theme, the news with its links
 function showReading(a) {
   const r = a.reading, T = L(), el = $("#r-reading");
+  const news = r.news || [];
+  const cite = (ids) => (ids || []).filter((i) => news[i]).map((i) => `<sup><a href="#ctx-n${i}">[${i + 1}]</a></sup>`).join("");
   el.innerHTML = `<h3>${esc(T.understood)}${r.doc_type ? ` · <span>${esc(r.doc_type)}</span>` : ""}</h3>` +
+    (r.notes ? `<p class="notes"><b>${esc(T.notes)}:</b> ${esc(r.notes)}</p>` : "") +
     (r.summary ? `<p class="sum">${esc(r.summary)}</p>` : "") +
     (r.sections || []).map((s) => `<h4>${esc(s.title)}</h4><ul>${s.points.map((p) =>
-      `<li>${esc(p.text)} <span class="pg">${fmtPages(p.pages)}</span></li>`).join("")}</ul>`).join("");
+      `<li>${esc(p.text)} <span class="pg">${fmtPages(p.pages)}</span>${cite(p.news)}</li>`).join("")}</ul>`).join("") +
+    (news.length ? `<h4>${esc(T.news)}</h4><ol class="news">${news.map((n, i) =>
+      `<li id="ctx-n${i}"><a href="${esc(n.url)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>` +
+      ` <span class="src">${esc([n.source, n.date].filter(Boolean).join(" · "))}</span>` +
+      (n.summary ? `<br>${esc(n.summary)}` : "") + `</li>`).join("")}</ol>` : "") +
+    (r.web === false ? `<p class="pg">${esc(T.no_news)}</p>` : "");
   el.hidden = false;
   $("#report").scrollTop = 0;
 }
@@ -799,26 +872,24 @@ function cardHTML(a, count) {
     <div class="tiles">${tiles}</div>
     <ul>${(a.card_findings || []).map((f) => `<li>${esc(f.text)} <span class="pg">${fmtPages(f.pages)}</span></li>`).join("")}</ul>
     <div class="foot"><span>${counts}</span>
-    <span>${esc(a.ai ? T.foot_ai(a.ai_provider || "AI") : T.foot_det)}</span></div></div>`;
+    <span>${esc(T.foot_det)}${a.ai ? " · " + esc(T.foot_ai(a.ai_provider || "AI")) : ""}</span></div></div>`;
 }
 
 // ------------------------------------------------------------------ downloadable report
 
-// a plain link to the server-made file (PDF report, PowerPoint deck, Excel figures): the browser downloads it as a normal file
+// the server-made file (PDF report, PowerPoint deck, Excel figures)
 function downloadReport(a, fmt = "report.pdf") {
-  const link = document.createElement("a");
-  link.href = `/api/doc/${a.id}/${fmt}?theme=${encodeURIComponent(themeId())}`;
-  link.download = "";
-  document.body.append(link); link.click(); link.remove();
+  saveFile(`/api/doc/${a.id}/${fmt}?theme=${encodeURIComponent(themeId())}`).catch((err) => alert(tr("orig_failed") + " " + err.message));
 }
 
 const deep = new URLSearchParams(location.search).get("doc");
 
-// the reader relies on Chromium behaviour; Safari and Firefox get a clear notice instead of a silent page
+// in a browser tab the reader is tested with Chromium; other browsers get a notice (the app's own window is fine)
 const isChromium = !!navigator.userAgentData || /\b(Chrome|Chromium|Edg|OPR|Brave)\//.test(navigator.userAgent);
-if (!isChromium) $("#browser-warn").hidden = false;
+if (!isChromium && !IN_WINDOW) $("#browser-warn").hidden = false;
+if (IN_WINDOW) $("#quit").hidden = true;                // closing the window quits
 
-refreshStatus().then(() => { if (!state.status?.ai && !deep) openSettings(true); });
+refreshStatus();
 loadRecent();
 hero($("#hero"), reduced);
 if (deep) openAnalysis(deep);

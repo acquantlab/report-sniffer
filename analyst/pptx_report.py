@@ -71,6 +71,8 @@ class Deck:
                 r.font.bold = st.get("bold", False)
                 r.font.italic = st.get("italic", False)
                 r.font.color.rgb = _rgb(st.get("color", INK))
+                if st.get("link"):
+                    r.hyperlink.address = st["link"]
             if para and para[0][1].get("space"):
                 p.space_after = Pt(para[0][1]["space"])
         return tb
@@ -470,15 +472,27 @@ class Deck:
                 self.table(s, [[lbl, v, extra] for lbl, v, extra in stats], MARGIN + half + Inches(0.4), Inches(1.8), half, [3, 1.4, 2], size=13, header=False)
 
     def understood(self):
+        """The AI context (asked for in the app): key points by theme, then the news with its links."""
         rd = self.a.get("reading") or {}
         secs = [sec for sec in rd.get("sections") or [] if sec.get("points")]
         for i in range(0, len(secs), 2):
-            s = self.slide(t("Cosa ha capito l'AI", "What the AI understood") + (f" · {rd['doc_type']}" if rd.get("doc_type") else ""))
+            s = self.slide(t("Contesto AI", "AI context") + (f" · {rd['doc_type']}" if rd.get("doc_type") else ""))
             half = int((W - 2 * MARGIN - Inches(0.4)) / 2)
             for j, sec in enumerate(secs[i:i + 2]):
                 x = MARGIN + j * (half + Inches(0.4))
                 self.text(s, x, Inches(1.35), half, Inches(0.45), [[(sec.get("title", ""), {"size": 18, "bold": True, "font": TITLE_FONT})]])
-                self.bullets(s, [(p.get("text", ""), p.get("pages")) for p in sec["points"][:5]], x, Inches(1.9), half, H - Inches(2.8), size=14)
+                self.bullets(s, [(p.get("text", "") + "".join(f" [{k + 1}]" for k in p.get("news") or []), p.get("pages"))
+                                 for p in sec["points"][:5]], x, Inches(1.9), half, H - Inches(2.8), size=14)
+        news = rd.get("news") or []
+        for i in range(0, len(news), 4):
+            s = self.slide(t("Ultime notizie", "Latest news") + (t(" (segue)", " (cont.)") if i else ""))
+            paras = []
+            for k, n in enumerate(news[i:i + 4], start=i + 1):
+                paras.append([(f"{k}.  ", {"size": 15, "bold": True, "color": self.pal["accent"]}),
+                              (n["title"], {"size": 15, "bold": True, "link": n["url"]}),
+                              ("  " + " · ".join(x for x in (n.get("source"), n.get("date")) if x), {"size": 11, "color": MUTED})])
+                paras.append([(n.get("summary") or "", {"size": 12, "space": 12})])
+            self.text(s, MARGIN, Inches(1.45), W - 2 * MARGIN, H - Inches(2.3), paras)
 
     def checks(self):
         checks = self.a.get("checks") or []
@@ -499,10 +513,13 @@ class Deck:
         lines = []
         if a.get("total_pages"):
             lines.append(t("Documento di {n} pagine.", "A {n}-page document.", n=a["total_pages"]))
-        if rd.get("pages_read"):
-            lines.append(t("{ai} ha letto {n} pagine; ogni numero che cita è confrontato con il documento.",
-                           "{ai} read {n} pages; every number it cites is matched to the document.",
-                           ai=a.get("ai_provider") or t("L’AI", "The AI"), n=len(rd["pages_read"])))
+        if a.get("reading"):
+            lines.append(t("{ai} ha messo le cifre nel contesto leggendo {n} pagine; i numeri che scrive sul documento sono confrontati con le pagine.",
+                           "{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.",
+                           ai=a.get("ai_provider") or t("L’AI", "The AI"), n=len(rd.get("pages_read") or [])))
+            if rd.get("news"):
+                lines.append(t("Le notizie vengono dalla sua ricerca sul web, ciascuna con il link: Report Sniffer non le verifica.",
+                               "The news comes from its web search, each item with its link: Report Sniffer does not verify it."))
         per = (a.get("fin") or {}).get("periods") or {}
         if len(per.get("flow") or []) > 1:
             lines.append(t("Confronto: {a} con {b}; stato patrimoniale al {c}.", "Comparison: {a} against {b}; balance sheet as of {c}.",

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="__UI__">
+<html lang="__UI__" data-native="__NATIVE__">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -74,6 +74,7 @@
     <div class="ctrl">
       <button id="play" type="button" data-i18n="play">Play</button>
       <button id="restart" type="button" data-i18n="restart">Restart</button>
+      <button id="ctx-open" type="button" data-i18n="ctx_btn">AI context</button>
       <select id="lang2" data-i18n-aria="opt_lang" aria-label="Report language"></select>
       <span class="theme-pick" role="group" data-i18n-aria="theme" aria-label="Theme"></span>
       <span class="dl">
@@ -94,6 +95,7 @@
       <div id="finale" hidden></div>
     </div>
     <aside id="report">
+      <p id="r-ctx-status" class="ctx-status" aria-live="polite" hidden></p>
       <div id="r-reading" hidden></div>
       <div class="r-head">
         <h2 id="r-title"></h2>
@@ -113,13 +115,36 @@
   </div>
 </section>
 
-<!-- Settings (also the first-run setup: the AI is required) -->
+<!-- AI context of the analysis being read: the user's notes and the latest news -->
+<dialog id="ctx">
+  <form method="dialog">
+    <h2 data-i18n="ctx_title">Context with AI</h2>
+    <p class="intro" data-i18n="ctx_intro"></p>
+    <div id="ctx-noai" hidden>
+      <p class="error" data-i18n="ctx_noai"></p>
+    </div>
+    <div id="ctx-form">
+      <label><span data-i18n="ctx_notes">Your notes (optional)</span>
+        <textarea id="ctx-notes" rows="5" maxlength="4000" data-i18n-ph="ctx_ph"></textarea>
+      </label>
+      <label class="check"><input id="ctx-web" type="checkbox" checked> <span data-i18n="ctx_web">Look for the latest news on the web</span></label>
+      <small id="ctx-noweb" data-i18n="ctx_noweb" hidden></small>
+    </div>
+    <div class="row end">
+      <button value="cancel" type="submit" class="link" data-i18n="close">Close</button>
+      <button id="ctx-settings" type="button" data-i18n="settings" hidden>Settings</button>
+      <button id="ctx-run" type="button" data-i18n="ctx_run">Run</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Settings: the AI (optional) and the SEC identity -->
 <dialog id="settings">
   <form method="dialog" id="settings-form">
     <h2 id="set-title" data-i18n="settings">Settings</h2>
-    <p id="set-intro" class="intro" data-i18n="setup_intro" hidden>Every document is read with an AI, so it is understood instead of only mined for figures. Choose how to connect one.</p>
+    <p id="set-intro" class="intro" data-i18n="setup_intro">The AI is optional.</p>
     <fieldset class="modes">
-      <legend data-i18n="ai_label">AI that reads the documents</legend>
+      <legend data-i18n="ai_label">AI for the context (optional)</legend>
       <label><input type="radio" name="aimode" value="sub"> <span data-i18n="mode_sub">A subscription I already have</span></label>
       <label><input type="radio" name="aimode" value="key"> <span data-i18n="mode_key">An API key</span></label>
     </fieldset>

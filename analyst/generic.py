@@ -2,9 +2,8 @@
 
 There are no XBRL tags here, so figures are found heuristically: every number on
 the page is a candidate, labelled with the words before it on the same line (or
-the table row it sits in) and ranked by financial keywords. The AI reader can pick
-the pages to show from the full text (choose=...) and then names the figures that
-matter (see reader.py), always checked against the page text.
+the table row it sits in) and ranked by financial keywords. The pages shown are the
+ones densest with figures (and, in HTML, the ones holding the statements).
 """
 from __future__ import annotations
 
@@ -12,7 +11,7 @@ import html
 import re
 from pathlib import Path
 from statistics import median
-from typing import Callable, Optional
+from typing import Optional
 
 from lxml import etree, html as lxml_html
 
@@ -41,8 +40,6 @@ MONTH_END = re.compile(r"(january|february|march|april|may|june|july|august|sept
                        r"|gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\.?\s*$", re.I)
 MAX_PAGES_SHOWN = 8
 MAX_FACTS_PAGE = 400
-# choose(all page texts) -> 0-based indexes of the pages to show, or None for the built-in choice
-Chooser = Optional[Callable[[list[str]], Optional[list[int]]]]
 
 
 def parse_loose(t: str) -> Optional[float]:
@@ -97,7 +94,7 @@ def score_label(label: str) -> int:
 
 # ---------------------------------------------------------------- PDF
 
-def pdf_document(data: bytes, img_dir: Path, img_url: str, choose: Chooser = None) -> dict:
+def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
     """PDF -> page images + transparent word layer (so the sniffer can find the words)."""
     import pypdfium2 as pdfium
 
@@ -114,8 +111,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, choose: Chooser = Non
         texts.append(tp.get_text_range() or "")
         tp.close()
         page.close()
-    picked = choose(texts) if choose else None
-    chosen = sorted(set(picked)) if picked else best_pages(texts)
+    chosen = best_pages(texts)
     pages_words = {}
     for i in chosen:
         page = pdf[i]
@@ -166,7 +162,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, choose: Chooser = Non
         meta = company_line(texts[:2]) or meta                   # "Q1 23_EarningsRelease", "Exhibit 99.1 - 6.30.2023"
     title = cover_name(texts[:3]) or meta or company_line(texts[:2])
     pdf.close()
-    return {"pages": out_pages, "facts": facts, "headings": headings, "page_text": page_text,
+    return {"pages": out_pages, "facts": facts, "headings": headings, "page_text": page_text, "all_text": texts,
             "total_pages": n, "title": title, "css": PDF_CSS}
 
 
@@ -367,11 +363,9 @@ PDF_CSS = """
 
 # ---------------------------------------------------------------- HTML (no XBRL tags)
 
-def html_document(data: bytes, base_url: Optional[str], choose: Chooser = None) -> dict:
+def html_document(data: bytes, base_url: Optional[str]) -> dict:
     """Plain HTML: pages, the figures on the pages shown, and the statement tables read with their periods.
-
-    choose(all page texts, table metrics) may pick the pages to show (0-based); the pages holding the
-    headline figures are always among them."""
+    The pages holding the headline figures are always among the pages shown."""
     from . import tables
     from .i18n import lang, t
     doc = ixbrl.parse(data, base_url)          # sanitises and splits pages; no facts in plain HTML
@@ -384,9 +378,7 @@ def html_document(data: bytes, base_url: Optional[str], choose: Chooser = None) 
         mm = fin["metrics"].get(k)
         if mm and mm["cur"]["page"] - 1 not in key_pages:
             key_pages.append(mm["cur"]["page"] - 1)
-    picked = choose(doc.page_text, fin, doc.page_labels) if choose else None
-    if not picked:
-        picked = best_pages(doc.page_text)
+    picked = best_pages(doc.page_text)
     shown = list(dict.fromkeys(key_pages[:4] + sorted(picked)))[:MAX_PAGES_SHOWN + 2]
     chosen = sorted({p + 1 for p in shown if 0 <= p < len(frags)})
 

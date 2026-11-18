@@ -369,5 +369,13 @@
 "{ok} of {n} arithmetic checks pass": "{ok} contrôles arithmétiques réussis sur {n}",
 "{sym} gained {p} over the last year.": "{sym} a gagné {p} sur la dernière année.",
 "{sym} lost {p} over the last year.": "{sym} a perdu {p} sur la dernière année.",
-"{typ} · market sheet as of {d}": "{typ} · fiche de marché au {d}"
+"{typ} · market sheet as of {d}": "{typ} · fiche de marché au {d}",
+"AI context": "Contexte IA",
+"Context by {p}: numbers about the document matched to its pages": "Contexte par {p} : chiffres du document vérifiés dans ses pages",
+"Latest news": "Dernières actualités",
+"The news comes from its web search, each item with its link: Report Sniffer does not verify it.": "Les actualités viennent de sa recherche sur le web, chacune avec son lien : Report Sniffer ne les vérifie pas.",
+"Your notes": "Vos notes",
+"{ai} is putting the figures in context (this can take a minute)": "{ai} met les chiffres en contexte (cela peut prendre une minute)",
+"{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} met les chiffres en contexte et cherche des actualités récentes (cela peut prendre quelques minutes)",
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} a mis les chiffres en contexte après avoir lu {n} pages ; les nombres qu’elle écrit sur le document sont vérifiés dans les pages."
 }

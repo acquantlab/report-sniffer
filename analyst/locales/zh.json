@@ -369,5 +369,13 @@
 "{ok} of {n} arithmetic checks pass": "{n}项算术校验中通过{ok}项",
 "{sym} gained {p} over the last year.": "{sym}过去一年上涨{p}。",
 "{sym} lost {p} over the last year.": "{sym}过去一年下跌{p}。",
-"{typ} · market sheet as of {d}": "{typ} · 截至{d}的市场概览"
+"{typ} · market sheet as of {d}": "{typ} · 截至{d}的市场概览",
+"AI context": "AI 背景",
+"Context by {p}: numbers about the document matched to its pages": "背景由 {p} 提供：有关文件的数字已与页面核对",
+"Latest news": "最新新闻",
+"The news comes from its web search, each item with its link: Report Sniffer does not verify it.": "新闻来自其网络搜索，每条均附链接：Report Sniffer 不对其进行核实。",
+"Your notes": "您的备注",
+"{ai} is putting the figures in context (this can take a minute)": "{ai} 正在为数字补充背景（可能需要一分钟）",
+"{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} 正在为数字补充背景并搜索最新新闻（可能需要几分钟）",
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} 阅读了 {n} 页后为数字补充了背景；其写下的有关文件的数字均与页面核对。"
 }

@@ -1,7 +1,6 @@
-"""The AI reading, with a simulated model: what is kept, what is dropped, how it reaches the report."""
+"""The AI context, with a simulated model: what is kept, what is dropped, how it reaches the report."""
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -27,85 +26,109 @@ S1 = ("<html><body>"
       "</body></html>").encode()
 
 
-def fig(label, value, page, metric="", role="", mult=1, period=""):
-    return {"label": label, "value": value, "page": page, "period": period, "metric": metric, "role": role, "multiplier": mult}
-
-
+NEWS = [{"title": "Lumen Labs prices its IPO at $21.00", "source": "Example Wire", "url": "https://news.example.com/lumen-ipo",
+         "date": "2026-11-02", "summary": "Demand was strong; the shares rose 35% on the first day."},
+        {"title": "No address", "source": "x", "url": "news.example.com/x", "date": "", "summary": ""},
+        {"title": "Not from the search", "source": "x", "url": "https://elsewhere.example.org/y", "date": "", "summary": ""}]
 ANSWER = {
-    "doc_type": "S-1 registration statement", "company": "Lumen Labs, Inc.", "period": "2025", "currency": "USD",
+    "doc_type": "S-1 registration statement",
     "summary": "Lumen Labs sells access to AI models. Revenue was 3,400 million in 2025. It is worth 77 billion.",
-    "sections": [{"title": "The offering", "points": [{"text": "10,000,000 shares at $21.00 each.", "pages": [1]},
-                                                      {"text": "A valuation of $500 billion.", "pages": [1]}]}],
-    "figures": [fig("Revenue", "3,400", 3, "revenue", "current", 1_000_000, "2025"),
-                fig("Revenue", "1,100", 3, "revenue", "prior", 1_000_000, "2024"),
-                fig("Operating loss", "(2,100)", 3, "operating_income", "current", 1_000_000),
-                fig("Operating loss", "(2,600)", 3, "operating_income", "prior", 1_000_000),
-                fig("Net loss", "(1,900)", 3, "net_income", "current", 1_000_000),
-                fig("Net loss", "(2,500)", 3, "net_income", "prior", 1_000_000),
-                fig("IPO price per share", "$21.00", 1),
-                fig("Invented figure", "$9,999", 3)],
-    "findings": [{"text": "Revenue rose to 3,400 from 1,100.", "refs": ["f0", "f1"]},
-                 {"text": "The net loss narrowed to (1,900).", "refs": ["f4"]},
-                 {"text": "Margins will reach 45% next year.", "refs": ["f0"]},
-                 {"text": "The operating loss was (2,100).", "refs": ["f2"]},
-                 {"text": "Shares are offered at $21.00.", "refs": ["f6"]}],
+    "sections": [{"title": "In context", "points": [
+        {"text": "10,000,000 shares at $21.00 each.", "pages": [1], "news": []},
+        {"text": "The shares rose 35% after the listing.", "pages": [], "news": [0]},
+        {"text": "The shares rose 35% after the listing, says nobody.", "pages": [], "news": []},
+        {"text": "A valuation of $500 billion.", "pages": [1], "news": [0]}]}],
+    "news": NEWS,
 }
 
 
 @pytest.fixture
 def fake_ai(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline, "DOCS", tmp_path / "docs")
-    monkeypatch.setattr(ai, "active", lambda: ("openai", "sk-test", "gpt-test"))
+    monkeypatch.setattr(ai, "active", lambda: ("anthropic", "sk-test", "claude-test"))
     prompts = []
 
     def install(answer):
-        def call(prompt, schema, max_tokens=16000):
-            prompts.append(prompt)
-            return answer(prompt) if callable(answer) else json.loads(json.dumps(answer))
+        def call(prompt, schema, max_tokens=16000, web=False):
+            prompts.append((prompt, web))
+            out = answer(prompt) if callable(answer) else json.loads(json.dumps(answer))
+            return {**out, "_search_urls": [NEWS[0]["url"], NEWS[1]["url"]]} if web else out
         monkeypatch.setattr(ai, "_call", call)
     install.prompts = prompts
     return install
 
 
-def test_validation_keeps_only_what_the_pages_show():
+def test_validation_keeps_only_what_the_pages_and_the_news_show():
     pages = {1: "Initial public offering price $21.00 per share. 10,000,000 shares", 3: "Model access sales 3,400 1,100 (1,900)"}
-    r = reader.validate(json.loads(json.dumps(ANSWER)), pages, {})
-    assert [f["value"] for f in r["figures"]] == ["3,400", "1,100", "(1,900)", "$21.00"]
+    r = reader.validate(json.loads(json.dumps(ANSWER)), pages, {}, [], "", [NEWS[0]["url"], NEWS[1]["url"]])
     assert "77" not in r["summary"] and r["summary"].startswith("Lumen Labs")
-    assert [p["text"] for p in r["sections"][0]["points"]] == ["10,000,000 shares at $21.00 each."]
-    assert [f["text"] for f in r["findings"]] == ["Revenue rose to 3,400 from 1,100.", "The net loss narrowed to (1,900).",
-                                                  "Shares are offered at $21.00."]
+    assert [n["title"] for n in r["news"]] == ["Lumen Labs prices its IPO at $21.00"]   # no address / not from the search
+    pts = r["sections"][0]["points"]
+    assert [p["text"] for p in pts] == ["10,000,000 shares at $21.00 each.", "The shares rose 35% after the listing."]
+    assert pts[1]["news"] == [0]                    # 35% is in the news item it cites; uncited, the same claim goes
 
 
-def test_prospectus_read_by_ai(fake_ai, monkeypatch):
+def test_context_is_added_to_an_analysis_read_by_rules(fake_ai, monkeypatch):
     fake_ai(ANSWER)
-    monkeypatch.setattr(pipeline, "_statement_metrics", lambda g: None)    # rows unknown to the label rules
-    a = pipeline.run({"kind": "upload", "data": S1, "name": "s1.htm", "ai": True, "lang": "en"}, lambda *_: None)
-    assert a["ai"] and a["title"] == "Lumen Labs, Inc." and a["subtitle"].startswith("S-1 registration statement")
-    assert a["reading"]["summary"] and "77" not in a["reading"]["summary"]
-    key = {f["label"]: f["display"] for f in a["facts"].values() if f["key"]}
-    assert key["IPO price per share"] == "$21.00" and "Invented figure" not in key
-    card = {t["key"]: t for t in a["card"]}
-    assert card["revenue"]["display"] == "$3.4B" and card["revenue"]["yoy_display"].startswith("+209")
-    assert a["fin"]["metrics"]["net_income"]["cur"] == -1.9e9
-    assert len(a["findings"]) == 4 and all("45%" not in f["text"] for f in a["findings"])
-    assert "<page n=\"3\">" in fake_ai.prompts[0]
+    a = pipeline.run({"kind": "upload", "data": S1, "name": "s1.htm", "lang": "en"}, lambda *_: None)
+    assert not a["ai"] and a["reading"] is None and a["facts"]           # read by rules, no AI involved
+    assert not fake_ai.prompts
+    a = pipeline.add_context(a["id"], "Is the IPO priced too high?", True, lambda *_: None)
+    prompt, web = fake_ai.prompts[0]
+    assert web and "<notes>\nIs the IPO priced too high?\n</notes>" in prompt and '<page n="3">' in prompt
+    assert "3,400" in prompt and "search the web" in prompt
+    assert a["ai"] and a["ai_provider"] == "Anthropic (Claude)" and a["reading"]["notes"] == "Is the IPO priced too high?"
+    assert pipeline.load(a["id"])["reading"]["news"][0]["url"] == NEWS[0]["url"]          # stored with the analysis
+    from analyst import pptx_report, xlsx_export
     pdf = pdfreport.build(a)
-    assert pdf[:5] == b"%PDF-" and len(pdf) > 3000
+    import pypdfium2 as pdfium
+    doc = pdfium.PdfDocument(pdf)
+    text = "".join(doc[i].get_textpage().get_text_range() for i in range(len(doc)))
+    assert "AI context" in text and "Latest news" in text and "Lumen Labs prices its IPO" in text
+    assert b"news.example.com/lumen-ipo" in pdf                                      # the news item links to its source
+    assert pptx_report.build(a)[:2] == b"PK" and xlsx_export.build(a)[:2] == b"PK"
 
 
-def test_ixbrl_findings_cite_tagged_figures(fake_ai):
-    def answer(prompt):
-        known = dict(re.findall(r"- id=(\w+) \| [^:\n]+: ([^\s(]+)", prompt))
-        ids = [k for k in ("revenue_cur", "net_income_cur", "cfo_cur") if k in known]
-        return {"doc_type": "10-K annual report", "company": "", "period": "", "currency": "USD",
-                "summary": "A software company.", "sections": [{"title": "Business", "points": [{"text": "Sells software.", "pages": [1]}]}],
-                "figures": [], "findings": [{"text": f"Item {chr(65 + i)} was {known[k]}.", "refs": [k]} for i, k in enumerate(ids)]}
-    fake_ai(answer)
-    a = pipeline.run({"kind": "upload", "data": (FIX / "sec_10k.htm").read_bytes(), "name": "x.htm", "ai": True, "lang": "en"}, lambda *_: None)
-    assert a["ai"] and a["reading"]["doc_type"] == "10-K annual report"
-    assert a["findings"][0]["text"].startswith("Item A was $") and a["findings"][2]["text"].startswith("Item C")
-    assert len(a["findings"]) == 6                     # three by the AI, topped up with computed ones
+def test_context_without_web_search_has_no_news(fake_ai, monkeypatch):
+    fake_ai(ANSWER)
+    monkeypatch.setattr(ai, "active", lambda: ("mistral", "k", "m"))
+    a = pipeline.run({"kind": "upload", "data": S1, "name": "s1.htm", "lang": "en"}, lambda *_: None)
+    a = pipeline.add_context(a["id"], "", True, lambda *_: None)
+    prompt, web = fake_ai.prompts[0]
+    assert not web and "cannot search the web" in prompt and "<notes>" not in prompt
+    assert a["reading"]["news"] == [] and a["reading"]["web"] is False
+    assert all(not p["news"] for s in a["reading"]["sections"] for p in s["points"])
+
+
+def test_claude_api_web_search_resumes_a_paused_turn(monkeypatch):
+    """The Claude API with its web search tool: a paused turn is resumed, the result addresses are collected."""
+    from types import SimpleNamespace as NS
+    calls = []
+
+    class Stream:
+        def __init__(self, resp): self.resp = resp
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def get_final_message(self): return self.resp
+
+    def stream(**kw):
+        calls.append(kw)
+        if len(calls) == 1:
+            return Stream(NS(stop_reason="pause_turn", content=[
+                NS(type="server_tool_use", citations=None),
+                NS(type="web_search_tool_result", citations=None, content=[NS(url="https://news.example.com/a")])]))
+        return Stream(NS(stop_reason="end_turn", content=[
+            NS(type="text", text='{"doc_type": "x", ', citations=None),
+            NS(type="text", text='"summary": "", "sections": [], "news": []}', citations=[NS(url="https://news.example.com/b")])]))
+
+    class Client:
+        def __init__(self, **kw): self.beta = NS(messages=NS(stream=stream))
+    import anthropic
+    monkeypatch.setattr(anthropic, "Anthropic", Client)
+    out = ai._call_anthropic("sk", "claude-test", "sys", "prompt", reader.CONTEXT_SCHEMA, 32000, web=True)
+    assert out["_search_urls"] == ["https://news.example.com/a", "https://news.example.com/b"]
+    assert calls[0]["tools"][0]["name"] == "web_search" and "format" not in calls[0]["output_config"]
+    assert len(calls[1]["messages"]) == 2 and calls[1]["messages"][1]["role"] == "assistant"   # the paused turn is resumed
 
 
 def test_page_choice_fits_the_budget():
@@ -140,14 +163,21 @@ def test_claude_subscription_via_claude_code(cfg, tmp_path, monkeypatch):
     bin_.mkdir()
     fake_tool(bin_, "claude", """
 a = sys.argv[1:]
-assert a[0] == "-p" and a[a.index("--tools") + 1] == "" and "--json-schema" in a and "--no-session-persistence" in a
-assert "ok" in sys.stdin.read()
-print(json.dumps({"type": "result", "is_error": False, "result": "", "structured_output": {"ok": True}}))""")
+assert a[0] == "-p" and "--json-schema" in a and "--no-session-persistence" in a and "--strict-mcp-config" in a
+prompt = sys.stdin.read()
+if '{"ok": true}' in prompt:                # the connection test
+    assert a[a.index("--tools") + 1] == "" and "--allowedTools" not in a
+    out = {"ok": True}
+else:                                   # context with news: only its web search and web fetch, allowed without asking
+    assert a[a.index("--tools") + 1] == "WebSearch,WebFetch" == a[a.index("--allowedTools") + 1]
+    out = {"doc_type": "x", "summary": "Fine.", "sections": [], "news": []}
+print(json.dumps({"type": "result", "is_error": False, "result": "", "structured_output": out}))""")
     monkeypatch.setenv("PATH", str(bin_))
     monkeypatch.setattr(ai.Path, "home", lambda: tmp_path)
     assert ai.active() is None
     ai.save_settings("claude_code")
     assert ai.active() == ("claude_code", "", "") and ai.test() == "Claude subscription (via Claude Code)"
+    assert ai.can_search() and reader.contextualize("Doc", {}, 0, {}, web=True)["summary"] == "Fine."
 
 
 @pytest.mark.skipif(os.name == "nt", reason="fake tools are POSIX scripts")
@@ -158,12 +188,18 @@ def test_chatgpt_subscription_via_codex(cfg, tmp_path, monkeypatch):
 a = sys.argv[1:]
 assert a[0] == "exec" and a[a.index("--sandbox") + 1] == "read-only" and a[-1] == "-"
 json.load(open(a[a.index("--output-schema") + 1]))
-sys.stdin.read()
-open(a[a.index("-o") + 1], "w").write(json.dumps({"ok": True}))""")
+if '{"ok": true}' in sys.stdin.read():      # the connection test
+    assert "web_search=\\"live\\"" not in a
+    out = {"ok": True}
+else:                                   # context with news: live web search
+    assert a[a.index("-c") + 1] == 'web_search="live"'
+    out = {"doc_type": "x", "summary": "Fine.", "sections": [], "news": []}
+open(a[a.index("-o") + 1], "w").write(json.dumps(out))""")
     monkeypatch.setenv("PATH", str(bin_))
     monkeypatch.setattr(ai.Path, "home", lambda: tmp_path)
     ai.save_settings("codex")
     assert ai.test() == "ChatGPT subscription (via Codex)"
+    assert reader.contextualize("Doc", {}, 0, {}, web=True)["web"] is True
 
 
 def test_subscription_not_installed_is_not_used(cfg, tmp_path, monkeypatch):
@@ -175,11 +211,21 @@ def test_subscription_not_installed_is_not_used(cfg, tmp_path, monkeypatch):
     assert ai.active()[0] == "openai"
 
 
-def test_server_requires_the_ai(monkeypatch):
+def test_server_reads_without_ai_and_asks_for_one_only_for_the_context(monkeypatch):
     import server
     client = TestClient(server.app, base_url="http://127.0.0.1:8765")
     monkeypatch.setattr(ai, "active", lambda: None)
-    r = client.post("/api/analyze", json={"kind": "sec", "query": "MSFT"})
+    started = []
+    monkeypatch.setattr(server, "_start", lambda req: started.append(req) or "job1")
+    assert client.post("/api/analyze", json={"kind": "sec", "query": "MSFT"}).json() == {"job": "job1"}
+    assert client.post("/api/upload", files={"file": ("a.pdf", b"%PDF-1.4")}).json() == {"job": "job1"}
+    assert all("ai" not in r for r in started)
+    st = client.get("/api/status").json()
+    assert st["ai"] is False and st["ai_web"] is False
+    monkeypatch.setattr(pipeline, "load", lambda aid: {"id": aid})
+    r = client.post("/api/context", json={"id": "0123456789abcdef", "notes": "x"})
     assert r.status_code == 409 and "AI" in r.json()["detail"]
-    assert client.post("/api/upload", files={"file": ("a.pdf", b"%PDF-1.4")}).status_code == 409
-    assert client.get("/api/status").json()["ai"] is False
+    monkeypatch.setattr(ai, "active", lambda: ("openai", "k", "m"))
+    assert client.post("/api/context", json={"id": "0123456789abcdef", "notes": " why? ", "web": False}).json() == {"job": "job1"}
+    assert started[-1] == {"kind": "context", "id": "0123456789abcdef", "notes": "why?", "web": False}
+    assert client.post("/api/context", json={"id": "../etc"}).status_code == 400

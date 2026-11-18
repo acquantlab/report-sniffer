@@ -11,6 +11,7 @@ from __future__ import annotations
 import io
 import re
 import threading
+from html import escape as html_escape
 from datetime import date
 
 from reportlab.lib import colors
@@ -313,9 +314,9 @@ def _build(a: dict, lang: str) -> bytes:
     left_note = t("{n} cifre lette", "{n} figures read", n=f"<b>{nfig}</b>") + " · " + (
         t("{ok} controlli superati su {n}", "{ok} checks passed out of {n}", ok=f"<b>{passed}</b>", n=len(checks)) if checks else
         t("nessun controllo aritmetico possibile su queste cifre", "no arithmetic check possible on these figures"))
-    ai_note = (t("Testi di {p}; ogni numero citato è confrontato con il documento", "Text by {p}; every number it cites is matched to the document")
-               .format(p=a.get("ai_provider") or "AI") if a.get("ai") else
-               t("Calcoli deterministici sulle cifre del documento", "Deterministic calculations on the document's figures"))
+    ai_note = t("Calcoli deterministici sulle cifre del documento", "Deterministic calculations on the document's figures") + (
+        " · " + t("Contesto di {p}: numeri sul documento confrontati con le pagine", "Context by {p}: numbers about the document matched to its pages",
+                  p=a.get("ai_provider") or "AI") if a.get("ai") else "")
     foot = Table([[Paragraph(_xm(left_note), S["foot"]), Paragraph(_x(ai_note), ParagraphStyle("fr", parent=S["foot"], alignment=2))]],
                  colWidths=[inner_w * 0.5, inner_w * 0.5])
     foot.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), 0.6, LINE), ("LEFTPADDING", (0, 0), (-1, -1), 0),
@@ -353,15 +354,28 @@ def _build(a: dict, lang: str) -> bytes:
         h2(t("Grafici", "Charts"))
         story.extend(visuals)
 
-    # what the AI understood, theme by theme
-    if rd.get("sections"):
-        h2(t("Cosa ha capito l'AI", "What the AI understood") + (f" · {rd['doc_type']}" if rd.get("doc_type") else ""))
-        for sec in rd["sections"]:
+    # the AI context (asked for in the app): the user's notes, key points by theme, the news with its links
+    news = rd.get("news") or []
+    if rd.get("sections") or news:
+        h2(t("Contesto AI", "AI context") + (f" · {rd['doc_type']}" if rd.get("doc_type") else ""))
+        if rd.get("notes"):
+            story += [Paragraph(f"<b>{_x(t('Le tue note', 'Your notes'))}:</b> " + _x(rd["notes"]), S["small"]), Spacer(1, 6)]
+        cite = lambda ids: "".join(f' <font color="{ACCENT_HEX}" size="8">[{i + 1}]</font>' for i in ids or [] if i < len(news))
+        for sec in rd.get("sections") or []:
             head = h3(sec.get("title", ""))
             head.keepWithNext = True
             story.append(head)
-            story.append(ListFlowable([ListItem(Paragraph(_x(p.get("text")) + _tag(p.get("pages")), S["body"]), leftIndent=12)
+            story.append(ListFlowable([ListItem(Paragraph(_x(p.get("text")) + _tag(p.get("pages")) + cite(p.get("news")), S["body"]), leftIndent=12)
                                        for p in sec.get("points") or []], bulletType="bullet", start="•", leftIndent=12))
+        if news:
+            head = h3(t("Ultime notizie", "Latest news"))
+            head.keepWithNext = True
+            story.append(head)
+            story.append(ListFlowable([ListItem(Paragraph(
+                f'<link href="{html_escape(n["url"], quote=True)}" color="{ACCENT_HEX}"><b>{_x(n["title"])}</b></link>'
+                + (f' <font color="#6c6a7c" size="8">{_x(" · ".join(x for x in (n.get("source"), n.get("date")) if x))}</font>' if n.get("source") or n.get("date") else "")
+                + (f"<br/>{_x(n['summary'])}" if n.get("summary") else ""), S["body"]), leftIndent=14) for n in news],
+                bulletType="1", bulletFontName=SERIF, bulletFontSize=9, leftIndent=14))
 
     ratios = charts.ratios_rows(a)
     if ratios:
@@ -405,10 +419,13 @@ def _build(a: dict, lang: str) -> bytes:
     if a.get("total_pages"):
         lines.append(t("Documento di {n} pagine; sono state mostrate le pagine {pages}.", "A {n}-page document; the reading showed pages {pages}.",
                        n=a["total_pages"], pages=_plist(shown)))
-    if rd.get("pages_read"):
-        lines.append(t("{ai} ha letto {n} pagine (sintesi, analisi della gestione, prospetti).",
-                       "{ai} read {n} pages (summary, management's discussion, statements).",
-                       ai=a.get("ai_provider") or t("L’AI", "The AI"), n=len(rd["pages_read"])))
+    if a.get("reading"):
+        lines.append(t("{ai} ha messo le cifre nel contesto leggendo {n} pagine; i numeri che scrive sul documento sono confrontati con le pagine.",
+                       "{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.",
+                       ai=a.get("ai_provider") or t("L’AI", "The AI"), n=len(rd.get("pages_read") or [])))
+        if rd.get("news"):
+            lines.append(t("Le notizie vengono dalla sua ricerca sul web, ciascuna con il link: Report Sniffer non le verifica.",
+                           "The news comes from its web search, each item with its link: Report Sniffer does not verify it."))
     if (a.get("fin") or {}).get("periods"):
         pf = a["fin"]["periods"].get("flow") or []
         if len(pf) > 1 and pf[1]:

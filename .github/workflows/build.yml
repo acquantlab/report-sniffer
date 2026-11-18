@@ -7,7 +7,7 @@ on:
   push:
     tags: ["v*"]
     branches: ["**"]
-    paths: ["app.py", "launch.py", "server.py", "requirements.txt", "packaging/**", ".github/workflows/build.yml"]
+    paths: ["app.py", "desktop.py", "launch.py", "server.py", "requirements.txt", "packaging/**", ".github/workflows/build.yml"]
   workflow_dispatch:
     inputs:
       version:
@@ -45,7 +45,7 @@ jobs:
           SNIFFER_PORT: "8791"
         run: |
           "${{ matrix.bin }}" --selftest
-          "${{ matrix.bin }}" --no-browser &
+          "${{ matrix.bin }}" --no-window &
           for i in $(seq 1 60); do curl -fs http://127.0.0.1:8791/api/status >/dev/null && break; sleep 1; done
           curl -fs http://127.0.0.1:8791/ | grep -q "Report Sniffer"
           curl -fs http://127.0.0.1:8791/static/sniffer.js >/dev/null

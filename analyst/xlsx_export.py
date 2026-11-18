@@ -112,13 +112,29 @@ def _build(a: dict) -> bytes:
             ws.write(r, 6, pages(fd.get("pages")), f_page)
             ws.set_row(r, 15 * max(1, len(fd.get("text") or "") // 100 + 1))
         r += 2
+    if rd.get("notes"):
+        ws.write(r, 0, t("Le tue note", "Your notes"), f_group)
+        r += 1
+        ws.merge_range(r, 0, r, 6, rd["notes"], f_text)
+        ws.set_row(r, 15 * max(1, len(rd["notes"]) // 110 + 1))
+        r += 2
     for sec in rd.get("sections") or []:
         ws.write(r, 0, sec.get("title") or "", f_group)
         for p in sec.get("points") or []:
             r += 1
-            ws.merge_range(r, 0, r, 5, p.get("text") or "", f_text)
+            text = (p.get("text") or "") + "".join(f" [{k + 1}]" for k in p.get("news") or [])
+            ws.merge_range(r, 0, r, 5, text, f_text)
             ws.write(r, 6, pages(p.get("pages")), f_page)
-            ws.set_row(r, 15 * max(1, len(p.get("text") or "") // 100 + 1))
+            ws.set_row(r, 15 * max(1, len(text) // 100 + 1))
+        r += 2
+    if rd.get("news"):
+        ws.write(r, 0, t("Ultime notizie", "Latest news"), f_group)
+        for k, n in enumerate(rd["news"], start=1):
+            r += 1
+            ws.write_url(r, 0, n["url"], string=f"{k}. {n['title']}")
+            ws.merge_range(r, 1, r, 5, n.get("summary") or "", f_text)
+            ws.write(r, 6, " · ".join(x for x in (n.get("source"), n.get("date")) if x))
+            ws.set_row(r, 15 * max(1, len(n.get("summary") or "") // 80 + 1))
         r += 2
 
     # ---------------------------------------------------------------- Statements

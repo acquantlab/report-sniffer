@@ -75,13 +75,6 @@ def test_generic_number_parsing():
     assert not generic.is_figure("2025")
 
 
-def test_ai_validation_drops_invented_numbers():
-    data = {"a": {"label": "Ricavi", "display": "$120 mld", "pages": [3]}, "b": {"label": "Crescita", "display": "+20,0%", "pages": [3]}}
-    ok = ai.validate([{"text": "Ricavi a $120 mld (+20,0%).", "ids": ["a", "b"]}], data)
-    bad = ai.validate([{"text": "Ricavi a $121 mld.", "ids": ["a"]}, {"text": "Ricavi su.", "ids": ["zzz"]}], data)
-    assert len(ok) == 1 and ok[0]["pages"] == [3] and bad == []
-
-
 def test_market_sheet():
     from synth import series
     r = market.build(series())

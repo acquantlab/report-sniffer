@@ -1,6 +1,6 @@
 // The sniffer: a small rolled banknote lying on its side, drawn with a few thin lines.
-// Its nose (the open end, on the right) stops at the left edge of each figure, and the figure it reads
-// is typed out in a small terminal readout above it.
+// Its nose (the open end, on the right) stops at the left edge of each figure and lights up while it reads;
+// the figure itself is highlighted on the page (app.js), nothing is written next to the roll.
 // Positions are in document pixels; (x, y) is the tip of the nose.
 
 export const COLORS = { back: "#000000", frame: "#ff9f1a", mark: "#f4f1e8", ping: "#e07b00", sight: "#1f6fe0" };
@@ -41,19 +41,18 @@ export class Sniffer {
     this.vel = { x: 0, y: 0 }; this.bv = { x: 0, y: 0 };
     this.speed = 1;
     this.tilt = 0; this.glow = 0;
-    this.readout = null;                  // the figure being read, typed out above the roll
+    this.lit = 0;                         // seconds the nose stays lit for the figure being read
   }
 
   place(x, y) {
     this.x = x; this.y = y;
     this.vel = { x: 0, y: 0 }; this.bv = { x: 0, y: 0 };
-    this.tilt = 0; this.glow = 0; this.readout = null;
+    this.tilt = 0; this.glow = 0; this.lit = 0;
   }
 
-  // a figure is read: it is typed out, one character at a time, in a small terminal readout above the roll
-  sniff(text) {
-    const s = String(text || "").replace(/\s+/g, " ").trim().slice(0, 24);
-    this.readout = s ? { text: s, t: 0, type: Math.max(0.1, 0.03 * s.length) / Math.sqrt(this.speed), hold: 0.9 / Math.sqrt(this.speed) } : null;
+  // a figure is read: the nose lights up for a moment
+  sniff() {
+    this.lit = 0.35 / Math.sqrt(this.speed);
   }
 
   // follow a moving goal with a critically damped spring: it glides, and never bounces
@@ -68,9 +67,8 @@ export class Sniffer {
     // the nose dips a little towards where it is going
     const want = Math.max(-0.3, Math.min(0.3, this.vel.y / (1500 * this.S)));
     this.tilt += (want - this.tilt) * Math.min(1, dt * 9);
-    const r = this.readout;
-    if (r) { r.t += dt; if (r.t > r.type + r.hold + 0.3) this.readout = null; }
-    const busy = !!r && r.t < r.type;
+    this.lit = Math.max(0, this.lit - dt);
+    const busy = this.lit > 0;
     this.glow += ((busy ? 1 : 0) - this.glow) * Math.min(1, dt * (busy ? 18 : 5));
   }
 
@@ -83,20 +81,6 @@ export class Sniffer {
     ctx.rotate(this.tilt);
     drawRoll(ctx, S, this.glow);
     ctx.restore();
-    const r = this.readout;
-    if (r) {
-      // black chip, accent digits, a block cursor while it types; its right edge sits over the nose
-      const fs = 8.5 * S, pad = 3 * S, n = Math.ceil(Math.min(1, r.t / r.type) * r.text.length);
-      ctx.font = `600 ${fs}px ${FONT}`;
-      const cw = ctx.measureText("0").width, w = r.text.length * cw + 2 * pad + cw, h = fs + 2 * pad;
-      const x = -w + 2 * S, y = -HGT * S / 2 - 3 * S - h;
-      ctx.globalAlpha = Math.min(1, r.t / 0.08, (r.type + r.hold + 0.3 - r.t) / 0.3);
-      ctx.fillStyle = COLORS.back; ctx.fillRect(x, y, w, h);
-      ctx.fillStyle = COLORS.frame; ctx.fillRect(x, y + h - Math.max(1, 0.8 * S), w, Math.max(1, 0.8 * S));
-      ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText(r.text.slice(0, n), x + pad, y + h / 2 + 0.5 * S);
-      if (n < r.text.length || Math.floor(r.t / 0.4) % 2 === 0) ctx.fillRect(x + pad + n * cw, y + pad, cw * 0.8, fs);
-    }
     ctx.restore();
   }
 }

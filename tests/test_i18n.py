@@ -75,7 +75,7 @@ def test_interface_language_follows_the_page(monkeypatch):
     c.cookies.set("sniffer_ui", "es")
     assert c.get("/api/status").json()["ui_lang"] == "es"
     assert c.post("/api/relang", json={"id": "x", "lang": "es"}).json()["detail"] == "solicitud no válida"
-    assert '<html lang="es">' in c.get("/").text
+    assert '<html lang="es"' in c.get("/").text
     c.cookies.set("sniffer_ui", "xx")                       # unknown: the system's language
     assert c.get("/api/status").json()["ui_lang"] == i18n.system_lang()
     assert [x["code"] for x in c.get("/api/status").json()["langs"]] == list(i18n.LANGS)

@@ -4,10 +4,12 @@
     python3 launch.py            (Windows: py launch.py)
 
 Creates .venv with Python 3.10+, installs requirements when they change, asks once
-for the SEC contact, starts the local server and opens it in a Chromium-based
-browser (Chrome, Brave, Edge, Arc, ...): the default browser if it is one,
+for the SEC contact, then runs the app (app.py): the local server in its own window.
+Where the system cannot show that window, the page opens in a Chromium-based
+browser (Chrome, Brave, Edge, Arc, ...) instead: the default browser if it is one,
 otherwise the first one installed. Set SNIFFER_BROWSER to force a browser
-(an app name on macOS, an executable path elsewhere).
+(an app name on macOS, an executable path elsewhere). --no-window (or --no-browser)
+starts the server only.
 
 Standard library only, and written for Python 3.8+ so it also runs under the
 macOS system Python; the app itself runs in the 3.10+ virtual environment.
@@ -19,7 +21,6 @@ import plistlib
 import shutil
 import subprocess
 import sys
-import time
 import urllib.request
 import webbrowser
 from pathlib import Path
@@ -233,12 +234,6 @@ def main():
     if "--help" in sys.argv or "-h" in sys.argv:
         say(__doc__)
         return 0
-    no_browser = "--no-browser" in sys.argv
-    if server_up():
-        say(ui("Report Sniffer è già in esecuzione su %s", "Report Sniffer is already running at %s") % URL)
-        if not no_browser:
-            open_browser()
-        return 0
     py = find_python()
     if not py:
         say(ui("Serve Python 3.10 o più recente: %s", "Python 3.10 or newer is required: %s") % PY_DOWNLOAD)
@@ -256,22 +251,15 @@ def main():
                "Setting up the environment failed: check the internet connection and try again."))
         return 1
     ask_sec_identity()
-    if not (Path.home() / ".report-sniffer" / "ai.json").exists():
-        say(ui("", "The first time, the page asks you to connect an AI: an API key, or your Claude (Claude Code) "
-                   "or ChatGPT (Codex) subscription."))
-    say(ui("Avvio Report Sniffer su %s  (Ctrl+C o chiudere questa finestra lo ferma)",
-           "Starting Report Sniffer at %s  (Ctrl+C or closing this window stops it)") % URL)
-    proc = subprocess.Popen([str(VPY), str(ROOT / "server.py")], cwd=str(ROOT))
-    for _ in range(80):
-        if server_up() or proc.poll() is not None:
-            break
-        time.sleep(0.25)
-    if proc.poll() is not None:
-        say(ui("Il server non è partito (la porta %d è occupata? Cambiala con SNIFFER_PORT).",
-               "The server did not start (is port %d in use? set SNIFFER_PORT to change it).") % PORT)
-        return 1
-    if not no_browser:
-        open_browser()
+    if server_up():
+        say(ui("Report Sniffer è già in esecuzione: apro un'altra finestra.", "Report Sniffer is already running: opening one more window."))
+    else:
+        say(ui("Avvio Report Sniffer: la sua finestra si apre tra poco (chiuderla, Ctrl+C o chiudere questo terminale lo ferma).",
+               "Starting Report Sniffer: its window opens in a moment (closing it, Ctrl+C or closing this terminal stops it)."))
+        say(ui("L'AI è facoltativa: collegala nelle Impostazioni per aggiungere contesto e notizie a un'analisi.",
+               "The AI is optional: connect one in Settings to add context and news to an analysis."))
+    no_window = "--no-browser" in sys.argv or "--no-window" in sys.argv
+    proc = subprocess.Popen([str(VPY), str(ROOT / "app.py")] + (["--no-window"] if no_window else []), cwd=str(ROOT))
     try:
         return proc.wait()
     except KeyboardInterrupt:

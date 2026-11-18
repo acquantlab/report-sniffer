@@ -64,6 +64,12 @@ def _exercise(lang: str) -> None:
         a = market.build(synth.series())
     sources.price_history = lambda s: synth.series()
     analyses.append(pipeline.run({"kind": "market", "symbol": "TEST-USD", "lang": lang}, lambda *_: None))
+    # the AI context (asked for in the app) as it is stored: notes, points citing news, news with links
+    reading = {"doc_type": "10-K", "summary": "A company.", "notes": "Is the debt a problem?", "pages_read": [1, 2], "web": True,
+               "sections": [{"title": "Results in context", "points": [{"text": "Sales grew.", "pages": [1], "news": [0]}]}],
+               "news": [{"title": "Results beat estimates", "source": "Example News", "url": "https://news.example.com/a",
+                         "date": "2026-10-30", "summary": "Shares rose."}]}
+    analyses += [{**json.loads(json.dumps(analyses[1])), "reading": reading, "ai": True, "ai_provider": "Claude"}]
     for a in analyses:
         a = json.loads(json.dumps(a))
         pdfreport.build(a)
