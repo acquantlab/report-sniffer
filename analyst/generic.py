@@ -72,8 +72,8 @@ def is_figure(token: str, allow_digit: bool = False) -> bool:
     digits = re.sub(r"\D", "", t)
     if not digits:
         return False
-    # years, footnote marks and lone small integers are rarely the figures we want
-    if re.fullmatch(r"(19|20)\d\d", t):
+    # years (also inside a sentence: "2022," "2021."), footnote marks and lone small integers are rarely the figures we want
+    if re.fullmatch(r"(19|20)\d\d[,.;:]?", t):
         return False
     if re.fullmatch(r"\d", t) and not allow_digit:
         return False
