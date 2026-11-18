@@ -8,10 +8,11 @@ from PyInstaller.utils.hooks import collect_all
 ROOT = Path(SPECPATH).parent
 ICON = str(ROOT / "packaging" / "icon.png")          # converted to .ico / .icns by PyInstaller (needs Pillow)
 
-# the web interface, the translations, the fonts of the PDF report (Latin, Greek, Cyrillic, Chinese, Japanese, Korean)
-# and the window icon
+# the web interface, the translations, the fonts of the PDF report (Latin, Greek, Cyrillic, Chinese, Japanese, Korean),
+# the window icon and the version (checked against the releases by updater.py)
 datas, binaries, hidden = [(str(ROOT / "web"), "web"), (str(ROOT / "analyst" / "locales"), "analyst/locales"),
-                           (str(ROOT / "analyst" / "fonts"), "analyst/fonts"), (ICON, "packaging")], [], ["server", "launch", "desktop"]
+                           (str(ROOT / "analyst" / "fonts"), "analyst/fonts"), (ICON, "packaging"), (str(ROOT / "VERSION"), ".")], [], \
+    ["server", "launch", "desktop", "updater"]
 # the app's window (pywebview picks its toolkit at run time): Edge WebView2 through pythonnet on Windows, WebKit
 # through PyObjC on macOS, Qt WebEngine on Linux
 if sys.platform == "win32":

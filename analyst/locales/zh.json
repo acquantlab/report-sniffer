@@ -377,5 +377,14 @@
 "Your notes": "您的备注",
 "{ai} is putting the figures in context (this can take a minute)": "{ai} 正在为数字补充背景（可能需要一分钟）",
 "{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} 正在为数字补充背景并搜索最新新闻（可能需要几分钟）",
-"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} 阅读了 {n} 页后为数字补充了背景；其写下的有关文件的数字均与页面核对。"
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} 阅读了 {n} 页后为数字补充了背景；其写下的有关文件的数字均与页面核对。",
+"Downloading the update": "正在下载更新",
+"Checking the update": "正在校验更新",
+"Installing the update: Report Sniffer restarts": "正在安装更新：Report Sniffer 将重新启动",
+"No update available.": "没有可用的更新。",
+"This copy cannot update itself: download the new version from the releases page.": "此副本无法自行更新：请从发布页面下载新版本。",
+"The downloaded file does not match the published one: update cancelled.": "下载的文件与发布的文件不一致：已取消更新。",
+"The new version does not start on this computer: update cancelled.": "新版本无法在此计算机上启动：已取消更新。",
+"Report Sniffer restarts": "Report Sniffer 正在重新启动",
+"An update is already running.": "已有更新正在进行。"
 }

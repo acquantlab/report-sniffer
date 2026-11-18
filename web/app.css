@@ -152,6 +152,18 @@ select { color: var(--text); }
 #r-other-list li i { color: var(--accent); font-style: normal; min-width: 3.2em; text-align: right; }
 #r-warn { color: var(--muted); font-size: 11.5px; margin-top: 18px; }
 
+/* a new release: the banner under the header of the home page */
+.update { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0; padding: 8px 16px;
+  background: var(--accent-soft); border-bottom: 1px solid var(--accent); color: var(--text); font-size: 13px; }
+.update .msg { flex: 1 1 320px; }
+.update .msg b { color: var(--accent); }
+.update a { color: var(--link); }
+.update a.key { border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink); padding: 5px 14px;
+  text-decoration: none; text-transform: uppercase; font-weight: 700; letter-spacing: .04em; }
+.update .bar { flex: 1 0 100%; height: 3px; background: var(--line); }
+.update .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+.opts .ver { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+
 /* the AI context, at the top of the panel once it is asked for */
 .ctx-status { margin: 14px 0 0; padding: 6px 10px; border: 1px dashed var(--accent); color: var(--text2); font-size: 12px; }
 .ctx-status.error { color: var(--down); border-color: var(--down); }

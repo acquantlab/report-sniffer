@@ -377,5 +377,14 @@
 "Your notes": "Ваши заметки",
 "{ai} is putting the figures in context (this can take a minute)": "{ai} ставит цифры в контекст (это может занять минуту)",
 "{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} ставит цифры в контекст и ищет свежие новости (это может занять несколько минут)",
-"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} поставил цифры в контекст, прочитав {n} стр.; числа, которые он пишет о документе, сверяются со страницами."
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} поставил цифры в контекст, прочитав {n} стр.; числа, которые он пишет о документе, сверяются со страницами.",
+"Downloading the update": "Загрузка обновления",
+"Checking the update": "Проверка обновления",
+"Installing the update: Report Sniffer restarts": "Установка обновления: Report Sniffer перезапускается",
+"No update available.": "Обновлений нет.",
+"This copy cannot update itself: download the new version from the releases page.": "Эта копия не может обновиться сама: скачайте новую версию на странице выпусков.",
+"The downloaded file does not match the published one: update cancelled.": "Загруженный файл не совпадает с опубликованным: обновление отменено.",
+"The new version does not start on this computer: update cancelled.": "Новая версия не запускается на этом компьютере: обновление отменено.",
+"Report Sniffer restarts": "Report Sniffer перезапускается",
+"An update is already running.": "Обновление уже выполняется."
 }

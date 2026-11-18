@@ -377,5 +377,14 @@
 "Your notes": "メモ",
 "{ai} is putting the figures in context (this can take a minute)": "{ai} が数値に背景を加えています（1 分ほどかかることがあります）",
 "{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} が数値に背景を加え、最新ニュースを検索しています（数分かかることがあります）",
-"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} は {n} ページを読んで数値に背景を加えました。書類について書いた数値はページと照合されています。"
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} は {n} ページを読んで数値に背景を加えました。書類について書いた数値はページと照合されています。",
+"Downloading the update": "更新をダウンロードしています",
+"Checking the update": "更新を確認しています",
+"Installing the update: Report Sniffer restarts": "更新をインストールしています：Report Sniffer が再起動します",
+"No update available.": "利用できる更新はありません。",
+"This copy cannot update itself: download the new version from the releases page.": "このコピーは自動で更新できません。リリースページから新しいバージョンをダウンロードしてください。",
+"The downloaded file does not match the published one: update cancelled.": "ダウンロードしたファイルが公開されたものと一致しません。更新を中止しました。",
+"The new version does not start on this computer: update cancelled.": "新しいバージョンがこのコンピューターで起動しません。更新を中止しました。",
+"Report Sniffer restarts": "Report Sniffer が再起動します",
+"An update is already running.": "更新はすでに実行中です。"
 }
