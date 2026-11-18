@@ -723,8 +723,9 @@ class Director {
     const a = this.a, p = a.pages.find((x) => x.n === n), T = L();
     $("#r-sec-title").textContent = `${p ? p.title : T.page + " " + pageLabel(n)} · ${T.pg(pageLabel(n))}`;
     const cols = a.cols[n] || [T.value];
-    $("#r-table thead").innerHTML = `<tr><th></th>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>`;
     const rows = (a.rows[n] || []).filter((r) => r.cells.some((fid) => fid !== null && this.planned.has(String(fid))));
+    // a page without statement lines has no table: its figures go to "Other figures read"
+    $("#r-table thead").innerHTML = rows.length ? `<tr><th></th>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>` : "";
     this.rowOf = new Map();
     $("#r-table tbody").innerHTML = rows.map((r, i) => {
       r.cells.forEach((fid, j) => fid !== null && this.rowOf.set(String(fid), [i, j]));

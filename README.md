@@ -6,7 +6,7 @@ Report Sniffer reads financial documents (10-K, ESEF, PDFs, market data) and bui
 terminal-style interface. A desktop app with its own window for macOS, Windows and Linux; everything runs on your
 computer. Free and open source under the [MIT license](LICENSE).
 
-![The sniffer reading the income statement of Netflix's 2022 10-K while the report fills in](docs/screenshots/sniffer.gif)
+![The sniffer reading the income statement and the cash flows of Netflix's 2022 10-K: every figure read stays highlighted on the original page while the report fills in](docs/screenshots/sniffer.gif)
 
 The sniffer, a small rolled banknote, goes over the original pages of the document and highlights the figures one by
 one while the report fills in. **Every figure, check and finding is read and computed by rules** — no AI is needed.
@@ -18,18 +18,16 @@ and for every report (in the page, PDF, PowerPoint and Excel). See [Languages](#
 
 ## Screenshots
 
-Netflix's 2022 10-K (FinanceBench PDF). These screenshots come from version 1.x, when an AI read every document:
-the reading, the card and the exports look the same today; the AI's texts now come from the optional
-[AI context](#the-ai-optional-context-and-news), and the figure is no longer typed out next to the banknote.
+Netflix's 2022 10-K (FinanceBench PDF), read by rules, with no AI connected.
 
 | | |
 |---|---|
-| ![The sniffer on page 40, the income statement: the figures read are underlined; on the right the figures it has read, with their page](docs/screenshots/reading.png) | ![The final card: revenue, net income, diluted EPS and free cash flow with the year-on-year change and the page of each figure; on the right what the AI understood](docs/screenshots/card.png) |
-| **Reading** — every figure is selected, underlined and lands in the report with its page. | **The card** — headline figures, findings and checks, each citing its page. |
+| ![The sniffer on page 40, the income statement: the figures read stay highlighted and underlined; on the right the statement lines filled in and the other figures read, with their page](docs/screenshots/reading.png) | ![The final card: revenue, net income, diluted EPS and free cash flow with the year-on-year change and the page of each figure; three findings and the checks](docs/screenshots/card.png) |
+| **Reading** — every figure is highlighted where it is printed on the original page and lands in the report with its page. | **The card** — headline figures, findings and checks, each citing its page. |
 | ![Search for "ferrari": the ESEF annual reports of five years from filings.xbrl.org and the listed shares](docs/screenshots/search.png) | ![Four slides of the PowerPoint export: headline figures, results chart, margins and balance sheet, income statement table](docs/screenshots/slides.png) |
 | **Search** — annual reports, quarterly reports and earlier years, to analyse or download. | **PowerPoint** — editable charts and tables, every slide names its source pages. |
 
-![The first two pages of the PDF report: card, summary, findings, financial highlights and charts](docs/screenshots/report.png)
+![The first two pages of the PDF report: card, findings, financial highlights, charts and key ratios](docs/screenshots/report.png)
 
 **PDF report** — the same analysis on paper; the figures are also downloadable as an Excel workbook.
 

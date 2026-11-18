@@ -72,7 +72,7 @@ def test_generic_number_parsing():
     assert generic.parse_loose("1.234.567,89") == pytest.approx(1234567.89)
     assert generic.parse_loose("1,234,567.89") == pytest.approx(1234567.89)
     assert generic.parse_loose("(2,5%)") == -2.5
-    assert not generic.is_figure("2025")
+    assert not generic.is_figure("2025") and not generic.is_figure("2022,") and not generic.is_figure("2021.")
 
 
 def test_market_sheet():
