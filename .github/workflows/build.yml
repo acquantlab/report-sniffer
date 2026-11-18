@@ -1,6 +1,7 @@
 # Builds the downloadable app for Windows, macOS and Linux.
 # A tag "v*", or a manual run with a version (Actions → Build apps → Run workflow), publishes the three archives
-# as a GitHub release; other runs keep them as workflow artifacts.
+# as a GitHub release; other runs keep them as workflow artifacts. A manual run with "replace" first deletes a release
+# of that version and its tag, so the version is published again from the commit being built.
 name: Build apps
 
 on:
@@ -14,12 +15,40 @@ on:
         description: "Version to publish as a release, e.g. v1.0.0 (empty: build only)"
         required: false
         default: ""
+      replace:
+        description: "Replace an existing release of this version (deletes it and its tag first)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
+  release:
+    # only when publishing: the version matches VERSION, then the release exists (replaced if asked) before the builds
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Check the version
+        # a release must carry the version written in VERSION: the app compares it with the releases to offer updates
+        env:
+          TAG: ${{ inputs.version || github.ref_name }}
+        run: test "v$(tr -d '[:space:]' < VERSION)" = "$TAG" || { echo "VERSION is $(cat VERSION), the release is $TAG"; exit 1; }
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.version || github.ref_name }}
+          REPLACE: ${{ inputs.replace }}
+        run: |
+          if [ "$REPLACE" = "true" ] && gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Report Sniffer $TAG" --generate-notes
+
   build:
+    needs: release
+    if: ${{ !failure() && !cancelled() }}          # also when release is skipped (not publishing)
     strategy:
       fail-fast: false
       matrix:
@@ -36,12 +65,6 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Check the version
-        # a release must carry the version written in VERSION: the app compares it with the releases to offer updates
-        if: startsWith(github.ref, 'refs/tags/v') || inputs.version != ''
-        env:
-          TAG: ${{ inputs.version || github.ref_name }}
-        run: test "v$(tr -d '[:space:]' < VERSION)" = "$TAG" || { echo "VERSION is $(cat VERSION), the release is $TAG"; exit 1; }
       - name: Install
         run: python -m pip install -r requirements.txt pyinstaller
       - name: Build
@@ -77,6 +100,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.version || github.ref_name }}
-        run: |
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "Report Sniffer $TAG" --generate-notes || true
-          gh release upload "$TAG" ReportSniffer-${{ matrix.name }}.* --clobber
+        run: gh release upload "$TAG" ReportSniffer-${{ matrix.name }}.* --clobber
