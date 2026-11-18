@@ -6,12 +6,15 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 ROOT = Path(SPECPATH).parent
-ICON = str(ROOT / "packaging" / "icon.png")          # converted to .ico / .icns by PyInstaller (needs Pillow)
+# the app icon (drawn in packaging/icon.svg): the .ico on Windows, the PNG elsewhere (converted to .icns on macOS by
+# PyInstaller, with Pillow); the PNG is also the window icon on Linux
+PNG = str(ROOT / "packaging" / "icon.png")
+ICON = str(ROOT / "packaging" / "icon.ico") if sys.platform == "win32" else PNG
 
 # the web interface, the translations, the fonts of the PDF report (Latin, Greek, Cyrillic, Chinese, Japanese, Korean),
 # the window icon and the version (checked against the releases by updater.py)
 datas, binaries, hidden = [(str(ROOT / "web"), "web"), (str(ROOT / "analyst" / "locales"), "analyst/locales"),
-                           (str(ROOT / "analyst" / "fonts"), "analyst/fonts"), (ICON, "packaging"), (str(ROOT / "VERSION"), ".")], [], \
+                           (str(ROOT / "analyst" / "fonts"), "analyst/fonts"), (PNG, "packaging"), (str(ROOT / "VERSION"), ".")], [], \
     ["server", "launch", "desktop", "updater"]
 # the app's window (pywebview picks its toolkit at run time): Edge WebView2 through pythonnet on Windows, WebKit
 # through PyObjC on macOS, Qt WebEngine on Linux
