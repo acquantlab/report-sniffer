@@ -46,7 +46,8 @@ The app opens in **its own window**, like any desktop program; closing the windo
 view of the system: Microsoft Edge WebView2 on Windows (part of Windows 10 and 11), WebKit on macOS (the engine of
 Safari), Qt WebEngine on Linux (bundled). No AI is needed to start: connect one in **Settings** whenever you want the
 [AI context](#the-ai-optional-context-and-news). Starting the app again while it runs opens one more window. What it
-would print goes to `~/.report-sniffer/app.log`.
+would print goes to `~/.report-sniffer/app.log`. When a new version is published, the home page says so and
+**Update now** installs it — see [Updates](#updates).
 
 If the system cannot show the window (Windows without WebView2; Linux without a display or without the X11 libraries
 Qt needs, such as `libxcb-cursor0` and `libxkbcommon-x11-0`), the app opens `http://127.0.0.1:8765` in a
@@ -284,11 +285,28 @@ or `claude-sonnet-5-5`); empty means the tool's default.
 Keys and the choice of provider are stored in `~/.report-sniffer/ai.json` (readable only by you) or read from the
 environment variables above.
 
+## Updates
+
+At every start the app asks GitHub for the latest release (an anonymous request to `api.github.com`, at most every 6
+hours). When there is a newer one, the home page shows it, with a link to what is new and **Update now**:
+
+1. the archive for your system is downloaded from the release;
+2. its SHA-256 is compared with the digest GitHub publishes for that file: any difference cancels the update;
+3. it is unpacked next to the installed app, and the new version must pass its own `--selftest`;
+4. the app quits, and a small script swaps the folders — the old version is kept until the new one is in place, and
+   put back if the swap fails — then starts the new version.
+
+Nothing changes until step 4, and your data, settings and keys in `~/.report-sniffer/` are never touched. A copy run
+from the source, one in a folder it cannot write to (on macOS, an app that was not moved to Applications) and Intel
+Macs show **Download** instead, which opens the release page. Versions before 2.1.0 have no updater: download 2.1.0
+once by hand.
+
 ## Data and privacy
 
 The server listens on `127.0.0.1` only. Documents and responses are cached in `.data/` (in `~/.report-sniffer/data/` by the downloaded app). The SEC identity is in
 `~/.report-sniffer/config.json`; the default is generic and no email is sent unless you enter one. The window keeps
-its settings (interface language, theme) in `~/.report-sniffer/webview/`.
+its settings (interface language, theme) in `~/.report-sniffer/webview/`. The check for updates sends GitHub nothing
+but the app's version (in the User-Agent).
 
 Nothing goes to an AI unless you press **Run** in *AI context*: then the figures, the text of the pages read and your
 notes are sent to the provider you chose (or to its command-line tool), under that provider's terms.
@@ -338,6 +356,7 @@ notes are sent to the provider you chose (or to its command-line tool), under th
 ```
 app.py                        entry point of the app (server in-process, its own window, no terminal)
 desktop.py                    the app's window (pywebview: WebView2, WebKit, Qt WebEngine) and its Save dialog
+updater.py, VERSION           updates from the GitHub releases (a release must carry the version in VERSION)
 packaging/                    PyInstaller recipe and icon of the app; .github/workflows/build.yml builds it
 launch.py                     launcher to run from the source (venv, dependencies, then app.py; browser fallback)
 Start Report Sniffer.command  macOS/Linux double-click wrapper

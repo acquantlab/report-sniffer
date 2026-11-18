@@ -44,6 +44,9 @@ def selftest():
                     if importlib.util.find_spec(m) is None]
             if gone:
                 raise SystemExit("window toolkit missing: %s" % ", ".join(gone))
+    import updater
+    if not updater.parse(updater.current()):                # the version the update check compares with the releases
+        raise SystemExit("VERSION missing or malformed: %r" % updater.current())
     missing = [n for n in ("index.html", "app.js", "app.css", "sniffer.js", "themes.js", "i18n.js") if not (server.WEB / n).exists()]
     if missing:
         raise SystemExit("missing web files: %s" % ", ".join(missing))

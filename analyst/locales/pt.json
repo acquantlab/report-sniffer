@@ -377,5 +377,14 @@
 "Your notes": "Suas notas",
 "{ai} is putting the figures in context (this can take a minute)": "{ai} está colocando os números em contexto (pode levar um minuto)",
 "{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} está colocando os números em contexto e buscando notícias recentes (pode levar alguns minutos)",
-"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} colocou os números em contexto depois de ler {n} páginas; os números que escreve sobre o documento são conferidos com as páginas."
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} colocou os números em contexto depois de ler {n} páginas; os números que escreve sobre o documento são conferidos com as páginas.",
+"Downloading the update": "Baixando a atualização",
+"Checking the update": "Verificando a atualização",
+"Installing the update: Report Sniffer restarts": "Instalando a atualização: o Report Sniffer reinicia",
+"No update available.": "Nenhuma atualização disponível.",
+"This copy cannot update itself: download the new version from the releases page.": "Esta cópia não pode se atualizar sozinha: baixe a nova versão na página de versões.",
+"The downloaded file does not match the published one: update cancelled.": "O arquivo baixado não corresponde ao publicado: atualização cancelada.",
+"The new version does not start on this computer: update cancelled.": "A nova versão não inicia neste computador: atualização cancelada.",
+"Report Sniffer restarts": "O Report Sniffer reinicia",
+"An update is already running.": "Já há uma atualização em andamento."
 }

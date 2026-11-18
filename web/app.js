@@ -876,6 +876,44 @@ function cardHTML(a, count) {
     <span>${esc(T.foot_det)}${a.ai ? " · " + esc(T.foot_ai(a.ai_provider || "AI")) : ""}</span></div></div>`;
 }
 
+// ------------------------------------------------------------------ updates
+// a new release on GitHub: the downloadable app installs it and restarts; a copy run from the source (or one
+// that cannot write where it is installed) links to the release page
+
+async function checkUpdate() {
+  let u;
+  try { u = await api("/api/update"); } catch { return; }
+  if (!u.newer) return;
+  const box = $("#update");
+  const notes = `<a href="${esc(u.url)}" target="_blank" rel="noopener noreferrer">${esc(tr("upd_notes"))}</a>`;
+  box.innerHTML = `<span class="msg">${tr("upd_avail", `<b>${esc(u.latest)}</b>`, esc(u.current))} ` +
+    (u.can_install ? "" : esc(tr("upd_manual"))) + `</span>` + notes +
+    (u.can_install ? `<button type="button" id="upd-now">${esc(tr("upd_now"))}</button>`
+      : `<a class="key" href="${esc(u.url)}" target="_blank" rel="noopener noreferrer">${esc(tr("upd_get"))}</a>`);
+  box.hidden = false;
+  $("#upd-now")?.addEventListener("click", installUpdate);
+}
+
+async function installUpdate() {
+  const box = $("#update");
+  box.innerHTML = `<span class="msg" id="upd-step">${esc(tr("preparing"))}</span><span class="bar"><i id="upd-bar"></i></span>`;
+  try {
+    const { job } = await postJSON("/api/update", {});
+    for (;;) {
+      const j = await api("/api/job/" + job);
+      $("#upd-step").textContent = j.step;
+      $("#upd-bar").style.width = Math.round(j.progress * 100) + "%";
+      if (j.status === "error") throw new Error(j.error);
+      if (j.status === "done") break;
+      await sleep(500);
+    }
+    $("#upd-step").textContent = tr("upd_restart");          // the app quits; the new version starts by itself
+  } catch (err) {
+    $("#upd-step").textContent = tr("upd_failed") + " " + err.message;
+    $("#upd-step").classList.add("error");
+  }
+}
+
 // ------------------------------------------------------------------ downloadable report
 
 // the server-made file (PDF report, PowerPoint deck, Excel figures)
@@ -890,7 +928,8 @@ const isChromium = !!navigator.userAgentData || /\b(Chrome|Chromium|Edg|OPR|Brav
 if (!isChromium && !IN_WINDOW) $("#browser-warn").hidden = false;
 if (IN_WINDOW) $("#quit").hidden = true;                // closing the window quits
 
-refreshStatus();
+refreshStatus().then(() => { if (state.status?.version) $("#version").textContent = "v" + state.status.version; });
+checkUpdate();
 loadRecent();
 hero($("#hero"), reduced);
 if (deep) openAnalysis(deep);

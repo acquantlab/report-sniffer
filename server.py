@@ -21,6 +21,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+import updater
 from analyst import ai, pdfreport, pipeline, pptx_report, sources, xlsx_export
 from analyst.i18n import LANGS, NATIVE, set_ui, system_lang, ui, ui_lang, using_ui
 
@@ -113,7 +114,7 @@ def status():
     return {"ai": ai.available(), "ai_name": ai.provider_name(), "ai_web": ai.can_search(), "ai_providers": ai.status(),
             "sec_user_agent": sources.sec_user_agent(),
             "sec_ua_custom": bool(os.environ.get("SNIFFER_SEC_UA") or cfg.get("sec_user_agent")),
-            "model": ai.MODEL, "ui_lang": ui_lang(), "system_lang": system_lang(),
+            "model": ai.MODEL, "ui_lang": ui_lang(), "system_lang": system_lang(), "version": updater.current(),
             "langs": [{"code": c, "name": NATIVE[c]} for c in LANGS]}
 
 
@@ -152,6 +153,36 @@ def ai_test():
         raise HTTPException(400, str(e))
     except Exception as e:
         raise HTTPException(400, f"{type(e).__name__}: {e}")
+
+
+# ---------------------------------------------------------------- updates
+
+def _update_steps() -> dict:
+    return {"download": ui("Scarico l'aggiornamento", "Downloading the update"),
+            "check": ui("Verifico l'aggiornamento", "Checking the update"),
+            "restart": ui("Installo l'aggiornamento: Report Sniffer si riavvia", "Installing the update: Report Sniffer restarts"),
+            "none": ui("Nessun aggiornamento disponibile.", "No update available."),
+            "manual": ui("Questa copia non può aggiornarsi da sola: scarica la nuova versione dalla pagina delle versioni.",
+                         "This copy cannot update itself: download the new version from the releases page."),
+            "corrupt": ui("Il file scaricato non corrisponde a quello pubblicato: aggiornamento annullato.",
+                          "The downloaded file does not match the published one: update cancelled."),
+            "broken": ui("La nuova versione non si avvia su questo computer: aggiornamento annullato.",
+                         "The new version does not start on this computer: update cancelled.")}
+
+
+@app.get("/api/update")
+def update_status():
+    """The latest release on GitHub and whether this copy can install it (checked at most every few hours)."""
+    return updater.public(updater.check())
+
+
+@app.post("/api/update")
+async def update_install(request: Request):
+    """Download, check and install the latest release; the app then restarts as the new version."""
+    await json_body(request)
+    if any(j["status"] == "running" and j.get("kind") == "update" for j in jobs.values()):
+        raise HTTPException(409, ui("Aggiornamento già in corso.", "An update is already running."))
+    return {"job": _start({"kind": "update"})}
 
 
 @app.post("/api/quit")
@@ -218,7 +249,8 @@ def _doc_url(kind: str, url: str) -> str:
 def _start(req: dict) -> str:
     jid = uuid.uuid4().hex[:12]
     now = time.time()
-    job = {"id": jid, "status": "running", "step": ui("In coda", "Queued"), "progress": 0.02, "error": None, "analysis_id": None, "t": now}
+    job = {"id": jid, "status": "running", "step": ui("In coda", "Queued"), "progress": 0.02, "error": None, "analysis_id": None, "t": now,
+           "kind": req.get("kind")}
     with jobs_lock:
         for old in [k for k, j in jobs.items() if j["status"] != "running" and now - j["t"] > JOB_TTL]:
             del jobs[old]
@@ -235,10 +267,15 @@ def _start(req: dict) -> str:
                 a = pipeline.relang(req["id"], req["lang"], progress)
             elif req["kind"] == "context":
                 a = pipeline.add_context(req["id"], req["notes"], req["web"], progress)
+            elif req["kind"] == "update":
+                updater.install(progress, _update_steps())
+                job.update(status="done", progress=1.0, step=ui("Report Sniffer si riavvia", "Report Sniffer restarts"))
+                threading.Timer(1.5, os._exit, args=(0,)).start()     # the helper swaps the new version in once we quit
+                return
             else:
                 a = pipeline.run(req, progress)
             job.update(status="done", progress=1.0, step=ui("Pronto", "Ready"), analysis_id=a["id"])
-        except sources.SourceError as e:
+        except (sources.SourceError, updater.UpdateError) as e:
             job.update(status="error", error=str(e))
         except Exception as e:  # keep the server alive; show the reason
             job.update(status="error", error=ui("Errore imprevisto: ", "Unexpected error: ") + f"{type(e).__name__}: {e}")
@@ -296,7 +333,7 @@ def job(jid: str):
     j = jobs.get(jid)
     if not j:
         raise HTTPException(404, ui("job sconosciuto", "unknown job"))
-    return {k: v for k, v in j.items() if k != "t"}
+    return {k: v for k, v in j.items() if k not in ("t", "kind")}
 
 
 # ---------------------------------------------------------------- documents

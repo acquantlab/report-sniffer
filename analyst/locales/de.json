@@ -377,5 +377,14 @@
 "Your notes": "Ihre Notizen",
 "{ai} is putting the figures in context (this can take a minute)": "{ai} stellt die Zahlen in den Kontext (das kann eine Minute dauern)",
 "{ai} is putting the figures in context and looking for recent news (this can take a few minutes)": "{ai} stellt die Zahlen in den Kontext und sucht aktuelle Nachrichten (das kann einige Minuten dauern)",
-"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} hat die Zahlen nach dem Lesen von {n} Seiten in den Kontext gestellt; die Zahlen, die sie über das Dokument schreibt, werden mit den Seiten abgeglichen."
+"{ai} put the figures in context after reading {n} pages; the numbers it writes about the document are matched to the pages.": "{ai} hat die Zahlen nach dem Lesen von {n} Seiten in den Kontext gestellt; die Zahlen, die sie über das Dokument schreibt, werden mit den Seiten abgeglichen.",
+"Downloading the update": "Aktualisierung wird heruntergeladen",
+"Checking the update": "Aktualisierung wird geprüft",
+"Installing the update: Report Sniffer restarts": "Aktualisierung wird installiert: Report Sniffer startet neu",
+"No update available.": "Keine Aktualisierung verfügbar.",
+"This copy cannot update itself: download the new version from the releases page.": "Diese Kopie kann sich nicht selbst aktualisieren: Laden Sie die neue Version von der Release-Seite herunter.",
+"The downloaded file does not match the published one: update cancelled.": "Die heruntergeladene Datei stimmt nicht mit der veröffentlichten überein: Aktualisierung abgebrochen.",
+"The new version does not start on this computer: update cancelled.": "Die neue Version startet auf diesem Computer nicht: Aktualisierung abgebrochen.",
+"Report Sniffer restarts": "Report Sniffer startet neu",
+"An update is already running.": "Eine Aktualisierung läuft bereits."
 }
