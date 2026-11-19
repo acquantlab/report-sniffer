@@ -33,7 +33,7 @@ PATTERNS: dict[str, list[str]] = {
                 r"(total )?insurance revenues?", r"ricavi assicurativi( derivanti dai contratti di assicurazione emessi)?"],
     "cost_of_revenue": [r"(total )?cost of (sales|revenues?|goods sold)", r"cost of products sold", r"costo del venduto", r"costi? delle vendite"],
     "gross_profit": [r"gross (profit|margin)", r"(margine|utile) lordo"],
-    "rnd": [r"research and development( expenses?| costs?)?", r"(costi|spese) (di|per) ricerca e sviluppo"],
+    "rnd": [r"research,? (and )?development( expenses?| costs?)?", r"(costi|spese) (di|per) ricerca e sviluppo"],
     "operating_income": [r"operating (income|profit|loss)( \(loss\))?", r"operating \(loss\) income", _RES + r" from operations",
                          r"(ebit|operating result)",
                          r"risultato operativo", r"utile operativo", r"reddito operativo"],
@@ -156,6 +156,7 @@ STATEMENT_TITLE = re.compile(
     r"consolidated (balance sheets?|statements? of (financial (position|condition)|(\((loss|income)\) )?(operations|income|earnings)( \(loss\))?"
     r"|comprehensive (\(loss\) )?(income|loss)( \(loss\))?|cash flows?))"
     r"|statements? of ((\((loss|income)\) )?(operations|income|earnings)( \(loss\))?|cash flows?|financial position)|balance sheets?|income statements?"
+    r"|cash flows? statements?"
     r"|conto economico|stato patrimoniale|rendiconto finanziario|situazione patrimoniale", re.I)
 # the words that put a title inside a sentence: "in the Consolidated Balance Sheets", "the summarized balance sheet"
 PROSE_WORD = (r"the|in|our|its|their|of|and|to|on|from|see|refer|into|within|this|these|those|accompanying|related|summarized|summary"
@@ -189,7 +190,7 @@ def _titles(text: str, limit: int = 700):
 
 def _title_spots(text: str, limit: int):
     yield from STATEMENT_TITLE.finditer(text[:limit])
-    top = text[:150]
+    top = _head(text, 150)
     if limit < len(text) and len(header_years(top)) >= 2 and HEADER_NEAR.search(top) and not re.search(r"\.\s+\w", top):
         # some PDFs give the page's title last ("…Weighted-average diluted shares 2,970.0 … Consolidated statements of
         # income  JPMorgan Chase & Co./2022 Form 10-K 159"): a title in the closing lines of a page that opens with columns
@@ -387,6 +388,7 @@ def page_kinds(text: str) -> set:
 
 
 EQ_TITLE = re.compile(r"statements? of (consolidated )?(changes in )?(\w+ )?(stockholders|shareholders|shareowners|share-holders)['’]? (equity|investment)"
+                      r"|(stockholders|shareholders|shareowners)['’]? equity statements?"
                       r"|statements? of (changes in )?equity|prospetto delle variazioni del patrimonio netto", re.I)
 
 
@@ -416,9 +418,19 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
                r"|bilancio separato|consolidating|guarantor|non-guarantor|\bissuer\b")
 
 
+BOILERPLATE = re.compile(r"(the |see )?(accompanying )?notes to (the )?(consolidated )?financial statements are an integral part of (these|this)"
+                         r"( consolidated)?( financial)? statements?\.?|see (the )?accompanying notes[^.]*\.?", re.I)
+
+
+def _head(text: str, n: int = 300) -> str:
+    """The opening of a page without the statements' footer some PDFs give first ("The accompanying Notes … are an
+    integral part of this statement. 49")."""
+    return BOILERPLATE.sub(" ", text[:n + 200])[:n]
+
+
 def _continues(text: str) -> bool:
     """A page that carries on the statement of the page before: no title of its own, not notes, statement rows."""
-    if title_match(text) or re.search(r"notes to|report of independent|discussion and analysis", text[:300], re.I) \
+    if title_match(text) or re.search(r"notes to|report of independent|discussion and analysis", _head(text), re.I) \
             or EQ_TITLE.search(text[:300] + " " + text[-300:]):
         return False
     rows = 0
@@ -438,7 +450,7 @@ def statement_pages(texts: list[str]) -> list[int]:
     first: dict[str, tuple] = {}
     for i, t in enumerate(texts):
         t = t[statement_start(t):]
-        head = t[:300]
+        head = _head(t)                                 # not the footer some PDFs give first ("… Notes to …")
         kind = page_statement(t)
         if not kind or re.search(r"analysis of|notes to|discussion and analysis|report of independent|exhibits and financial statement schedules", head, re.I):
             continue
@@ -449,12 +461,15 @@ def statement_pages(texts: list[str]) -> list[int]:
         figs = len(re.findall(r"\(?\d[\d,]{2,}\)?", t))
         if figs < 12:
             continue
-        rank = (not re.search(NOT_PRIMARY, head, re.I), "consolidat" in (head + " " + title.group()).lower(),
+        # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
+        # note or the MD&A has text above it
+        top = title.start() < 200 or title.start() > len(t) - 250
+        rank = (not re.search(NOT_PRIMARY, head, re.I), top, "consolidat" in (head + " " + title.group()).lower(),
                 not re.search(r"comprehensive", head, re.I), figs)
         if kind not in best or rank > best[kind][0]:
             best[kind] = (rank, i)
-        if kind not in first or rank[:3] > first[kind][0]:
-            first[kind] = (rank[:3], i)
+        if kind not in first or rank[:4] > first[kind][0]:
+            first[kind] = (rank[:4], i)
     foot = set()
     for i, t in enumerate(texts[:-1]):
         # a title at the foot of a page with the statement itself on the next one ("Consolidated Statements of Cash
@@ -462,13 +477,13 @@ def statement_pages(texts: list[str]) -> list[int]:
         title = title_match(t)
         kind = page_statement(t)
         if kind and title and len(re.findall(r"\(?\d[\d,]{2,}\)?", t)) < 12 and _continues(texts[i + 1]):
-            rank = (not re.search(NOT_PRIMARY, t[:300], re.I), "consolidat" in (t[:300] + " " + title.group()).lower(),
+            rank = (not re.search(NOT_PRIMARY, t[:300], re.I), True, "consolidat" in (t[:300] + " " + title.group()).lower(),
                     not re.search(r"comprehensive", title.group(), re.I), len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])))
             if kind not in best or rank > best[kind][0]:
                 best[kind] = (rank, i + 1)
                 foot.add(i)
-            if kind not in first or rank[:3] > first[kind][0]:
-                first[kind] = (rank[:3], i + 1)
+            if kind not in first or rank[:4] > first[kind][0]:
+                first[kind] = (rank[:4], i + 1)
                 foot.add(i)
     pages = {i for _, i in best.values()} | {i for _, i in first.values()}
     pages |= {i for i in foot if i + 1 in pages}
@@ -488,7 +503,7 @@ def _drop_note_ref(nums: list, years: list) -> list:
     more figures than the page has year columns. A two-digit amount in its own column stays."""
     if len(nums) >= 2 and _is_note_ref(nums[0]):
         cols = len(years) if len(years) >= 2 else 2
-        if len(nums) > cols:
+        if len(nums) > cols and len(nums) % cols:      # not a row printed twice ("$ 46 $ 303 $ 1,203" and again)
             return nums[1:]
     return nums
 
@@ -548,6 +563,41 @@ def _with_dashes(nums: list, label: str, text: str, n: int) -> list:
     return nums
 
 
+def _right(f: dict) -> float:
+    """Where an amount ends on the page, its closing parenthesis aside (columns align on the digits)."""
+    return f["x1"] - (3.5 if f["display"].rstrip().endswith(")") else 0)
+
+
+def page_columns(facts: list[dict]) -> list[float]:
+    """The columns of amounts on a PDF page: where the formatted amounts end, grouped (left to right)."""
+    xs = sorted(_right(f) for f in facts if "x1" in f and re.search(r"\d,\d{3}|\(\d|\d\.\d", f["display"]))
+    groups: list[list[float]] = []
+    for x in xs:
+        if groups and x - groups[-1][-1] <= 8:
+            groups[-1].append(x)
+        else:
+            groups.append([x])
+    return [sorted(g)[len(g) // 2] for g in groups if len(g) >= 3]
+
+
+def by_position(nums: list, cols: list[float], n: int) -> Optional[list]:
+    """A row's amounts put under the columns they sit in: an empty cell stays empty, a note number or a footnote mark
+    outside the columns is left out, a row printed twice under the same label keeps its first figures. None when the
+    page's columns are not the header's (percentages, notes) or a figure has no position."""
+    if n < 2 or len(cols) != n or not nums or any("x1" not in f for f in nums):
+        return None
+    cells: list = [None] * n
+    placed = False
+    for f in nums:
+        i = min(range(n), key=lambda k: abs(cols[k] - _right(f)))
+        if abs(cols[i] - _right(f)) > 12:
+            continue
+        if cells[i] is None:
+            cells[i] = f
+            placed = True
+    return cells if placed else None
+
+
 def _columns(nums: list, years: list, quarters: Optional[list] = None) -> tuple:
     """(current, comparative) figure of a row, by the years (or quarter codes) heading the page's columns."""
     if quarters and len(nums) >= len(quarters):
@@ -596,7 +646,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         last = list(_headings(raw[p - 1])) if p - 1 in page_text else []
         if last and not title_match(page_text[p]) \
                 and not re.search(r"notes to|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
-                                  page_text[p][:300], re.I) and not re.search(r"statements? of|balance sheets?", page_text[p][-300:], re.I):
+                                  _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?", page_text[p][-300:], re.I):
             prev = raw[p - 1][last[-1].start():]
             row = re.search(r"\(?\$?\s?\d{1,3}(,\d{3})+", prev)           # the header ends where the first amount is
             page_text[p] = prev[:min(row.start() if row else 300, 400)] + " " + page_text[p]
@@ -608,6 +658,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     groups: dict[tuple[int, str], list[dict]] = {}
     for f in facts:
         groups.setdefault((f["page"], f["label"]), []).append(f)
+    cols = {p: page_columns([f for f in facts if f["page"] == p]) for p in page_text}
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
@@ -619,7 +670,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             ps = [f for f in nums if is_per_share(f)]
             n = len(ys) if len(ys) >= 2 else 0
             if n and len(ps) == 2 * n and re.search(r"basic.{0,600}?diluted", page_text.get(page, ""), re.I | re.S):
-                found.setdefault("eps_diluted", []).append((page, ps[n:], _clean(label) + " diluted (heading)"))
+                found.setdefault("eps_diluted", []).append((page, ps[n:], _clean(label) + " diluted (heading)", None))
             if key == "net_income" and ps and len(ps) == len(nums):
                 continue                                   # only per-share figures: not the amount
         if not key:
@@ -629,7 +680,13 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             continue                                       # a bare "Diluted" row of share counts, not earnings per share
         if not nums:
             continue
-        found.setdefault(key, []).append((page, nums, _clean(label)))
+        n = len(header_quarters(page_text.get(page, ""))) or len(dict.fromkeys(ys))
+        row = sorted((f for f in fs if not f.get("inline")), key=lambda f: f["id"])
+        cells = by_position(row if key not in PER_SHARE else nums, cols.get(page, []), n)
+        if cells is not None and key not in PER_SHARE:
+            kept = {id(f) for f in _amounts(row, key)}   # the amounts of the row, not its per-share figures or percentages
+            cells = [f if f is not None and id(f) in kept else None for f in cells]
+        found.setdefault(key, []).append((page, nums, _clean(label), cells))
     # statements are the pages titled as such, then the pages where most metrics were recognised
     page_hits: dict[int, int] = {}
     for key, cands in found.items():
@@ -674,11 +731,13 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             # with the consolidated statement at hand, its lines from it only: not a figure elsewhere (a segment's, a
             # quarter's, the MD&A's), the parent company's or the guarantors' statements, the statement of equity
             cands = [c for c in cands if statement_of(key) in kinds[c[0]] and titled.get(c[0], 0) >= 2]
-            if any(year_of[c[0]] >= top_year for c in cands):
-                cands = [c for c in cands if year_of[c[0]] >= top_year]       # not an investee's older statements
+            if any(year_of[p] >= top_year and statement_of(key) in kinds[p] and titled[p] >= 2 for p in page_text):
+                cands = [c for c in cands if not 0 < year_of[c[0]] < top_year]  # not an investee's older statements
+                if not cands:
+                    continue
             if not cands:
                 continue
-        page, nums, label = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
+        page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
                                                    year_of[c[0]] >= top_year, not cond[c[0]], titled.get(c[0], 0),
                                                    kind_of.get(c[0]) == statement_of(key), page_hits[c[0]], _line_rank(key, c[2]),
                                                    len(c[1]) >= 2, -c[0],
@@ -687,7 +746,9 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         text = page_text.get(page, "")
         ys = header_years(text)
         qs = header_quarters(text)
-        if ys and not qs and len(nums) < len(ys):
+        if cells is not None and any(cells):
+            nums = cells                               # by where each figure sits under the column headers
+        elif ys and not qs and len(nums) < len(ys):
             nums = _with_dashes(nums, label, text, len(ys))
         cur_f, prev_f = _columns(nums, ys, qs)
         if cur_f is None:

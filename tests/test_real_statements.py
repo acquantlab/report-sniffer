@@ -256,3 +256,25 @@ def test_labels_in_a_narrow_column_and_a_page_without_scale(no_ai, tmp_path):
     m = _run(tmp_path, [ops, bs, cf])["fin"]["metrics"]
     assert m["revenue"]["cur"] == 30_274_000_000 and m["net_income"]["cur"] == 4_833_000_000
     assert m["cfo"]["cur"] == 6_420_000_000 and m["cfi"]["cur"] == -2_966_000_000
+
+
+def test_figures_go_under_the_column_they_sit_in(no_ai, tmp_path):
+    """Boeing paid no dividend in 2021 (an empty cell); PepsiCo's cash rose by 62 and AES's exchange effect was 9
+    (small numbers in the first column, not note references); AES prints its net income attributable twice."""
+    pytest.importorskip("reportlab")
+    cf = _page(["Example Aerospace Company", "Consolidated Statements of Cash Flows", "(Dollars in millions)", "Years ended December 31,"],
+               ["2021", "2020", "2019"], [
+        ("Net cash provided by operating activities", "(3,416)", "(18,410)", "(2,446)"),
+        ("Depreciation and amortization", "2,144", "2,246", "2,271"), ("Payments to acquire property", "(980)", "(1,303)", "(1,834)"),
+        ("Net cash used by investing activities", "(9,324)", "(18,366)", "(1,530)"), ("New borrowings", "1,229", "34,955", "11,880"),
+        ("Dividends paid", "(1,158)", "(4,630)"),
+        ("Effect of exchange rate changes on cash", "9", "(52)", "(51)"),
+        ("Net increase in cash and cash equivalents", "62", "2,962", "(3,241)")])
+    ops = _page(["Example Aerospace Company", "Consolidated Statements of Operations", "(Dollars in millions)"], ["2021", "2020", "2019"], [
+        ("Total revenues", "62,286", "58,158", "76,559"), ("Net income attributable to Example", "$ 46", "$ 303", "$ 1,203"),
+        ("Other comprehensive income", "10", "20", "30"), ("Net income attributable to Example", "$ 46", "$ 303", "$ 1,203")])
+    m = _run(tmp_path, [ops, cf])["fin"]["metrics"]
+    assert "dividends" not in m                                    # nothing in 2021
+    assert m["fx_effect"]["cur"] == 9_000_000 and m["fx_effect"]["prev"] == -52_000_000
+    assert m["cash_change"]["cur"] == 62_000_000 and m["cash_change"]["prev"] == 2_962_000_000
+    assert m["net_income"]["cur"] == 46_000_000 and m["net_income"]["prev"] == 303_000_000

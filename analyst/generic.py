@@ -156,7 +156,8 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
                 f = figs[id(wd)]
                 fid = len(facts)
                 facts.append({"id": fid, "label": f["label"] or t("Cifra", "Figure"), "value": f["value"], "display": wd["t"], "page": i + 1,
-                              "kind": "num", "col": "Valore", "key": f["score"] >= 2, "score": f["score"], "inline": f["inline"]})
+                              "kind": "num", "col": "Valore", "key": f["score"] >= 2, "score": f["score"], "inline": f["inline"],
+                              "x1": round(wd["x"] + wd["w"], 1)})
                 attrs = f' class="w xf" data-f="{fid}"'
             elif id(wd) in line_heads:
                 hid = len(headings)
@@ -315,14 +316,30 @@ def _lines(words: list[dict]) -> list[list[dict]]:
 def _label_figures(words: list[dict]) -> list[dict]:
     out = []
     lines = _lines(words)
+    # the page's columns of amounts: where the formatted amounts end (their right edges, a ")" aside)
+    def edge(w):
+        return w["x"] + w["w"] - (3.5 if w["t"].endswith(")") else 0)
+
+    groups: list[list[float]] = []
+    for e in sorted(edge(w) for ln in lines for w in ln if is_figure(w["t"]) and re.search(r"\d[.,]\d", w["t"])):
+        if groups and e - groups[-1][-1] <= 8:
+            groups[-1].append(e)
+        else:
+            groups.append([e])
+    columns = [sorted(g)[len(g) // 2] for g in groups if len(g) >= 3]
+
+    def in_column(w):
+        return any(abs(edge(w) - c) <= 8 for c in columns)
+
     for li, ln in enumerate(lines):
         # a 1-2 digit number in front of a row of formatted amounts is a note reference, not a figure;
-        # between the amounts it is one ("Net income  $ (6,841)  $ 78  $ (5,865)")
+        # between the amounts it is one ("Net income  $ (6,841)  $ 78  $ (5,865)"), and so it is in the column of
+        # the amounts ("Net increase in cash  62  2,962  (3,241)", "… on cash  9  (52)  (51)")
         amount_x = [w["x"] for w in ln if is_figure(w["t"]) and re.search(r"\d[.,]\d", w["t"])]
         for k, wd in enumerate(ln):
             if not is_figure(wd["t"], allow_digit=True):
                 continue
-            if len(amount_x) >= 2 and re.fullmatch(r"\d{1,2}", wd["t"]) and wd["x"] < min(amount_x):
+            if len(amount_x) >= 2 and re.fullmatch(r"\d{1,2}", wd["t"]) and wd["x"] < min(amount_x) and not in_column(wd):
                 continue
             prev_w = ln[k - 1]["t"] if k > 0 else ""
             if re.fullmatch(r"\d{1,2},?", wd["t"]) and MONTH_END.search(prev_w):
@@ -361,7 +378,7 @@ def _label_figures(words: list[dict]) -> list[dict]:
             if v is None:
                 continue
             sc = score_label(label)
-            if re.fullmatch(r"\d", wd["t"]) and sc < 3:
+            if re.fullmatch(r"\d", wd["t"]) and sc < 3 and not (in_column(wd) and any(is_figure(w["t"]) for w in ln if w is not wd)):
                 continue
             if wd["t"].endswith("%"):
                 sc += 0.5
@@ -396,7 +413,7 @@ def _section_total(lines: list[list[dict]], li: int) -> str:
 
     if len(figs(lines[li])) < 2 or not figs(lines[li - 1]) or not text(lines[li - 1]):
         return ""                                       # under a label line: a row wrapped onto two lines
-    closed = set()
+    closed, less = set(), False
     for j in range(li - 1, max(0, li - 60) - 1, -1):
         ln = lines[j]
         t, has_fig = text(ln), bool(figs(ln))
@@ -406,9 +423,13 @@ def _section_total(lines: list[list[dict]], li: int) -> str:
             continue
         if has_fig and not t:
             above = _section_total(lines, j)            # another unlabeled total: the section it closes is closed
+            if above.startswith("Gross ") and less:
+                return "Net " + above[6:]               # "… / Less: Promotional allowances / 9,455,123": net revenues
             if above:
-                closed.add(above[6:].lower())
+                closed.add(above.split(" ", 1)[1].lower())
             continue
+        if has_fig and re.match(r"less\b", t, re.I):
+            less = True
         if has_fig or not t:
             continue
         if len(t) > 60 or t.endswith(".") or not t[:1].isupper() or re.search(r"\d", t):
@@ -417,7 +438,10 @@ def _section_total(lines: list[list[dict]], li: int) -> str:
             continue                                    # a section with its own total line
         if any(text(nx).lower() == "total " + t.lower() for nx in lines[li + 1:li + 30]):
             return ""                                   # the section's total comes later: this is a subtotal
-        return "Total " + (t.lower() if t.isupper() else t[:1].lower() + t[1:])
+        name = t.lower() if t.isupper() else t[:1].lower() + t[1:]
+        if li + 1 < len(lines) and re.match(r"less\b", text(lines[li + 1]), re.I):
+            return "Gross " + name                      # amounts deducted from it follow
+        return "Total " + name
     return ""
 
 
