@@ -155,12 +155,12 @@ year — with the value the company filed in XBRL with the SEC for the same peri
 
 | On the 269 10-K PDFs | v2.1.0 | v2.2.0 |
 |---|---|---|
-| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,670 of 11,670) |
-| Main lines found (16 lines × 2 years) | 78.8% | **98.9%** |
+| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,690 of 11,690) |
+| Main lines found (16 lines × 2 years) | 78.8% | **99.1%** |
 
 The rules were first fixed on the 40 latest reports; on the other years, which they had not seen, they then read
 96.6% (2019) and 98.4% (2015–2021) right, and what was still wrong there was fixed in turn. So 100% means "no
-error left on these 269 reports", not "no error possible": another layout can still leave a line unread (1.1% of the
+error left on these 269 reports", not "no error possible": another layout can still leave a line unread (0.9% of the
 main lines here, mostly lines a statement does not print) or, rarely, read one from the wrong place. The page of every
 figure is shown, so it can be checked. Inline XBRL filings need no such measure: their figures are the tags
 themselves. Not measured yet: quarterly reports, earnings releases and non-US reports in PDF.

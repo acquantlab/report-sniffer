@@ -353,7 +353,7 @@ def _label_figures(words: list[dict]) -> list[dict]:
                 continue                                  # "(17 CFR 240.14d-2(b))"
             if re.fullmatch(r"\(\d\)", wd["t"]) and re.search(r"[A-Za-z]$", prev_w) and (next_w in ("$", "€", "£") or re.search(r"\d[,.]\d", next_w)):
                 continue                                  # a footnote mark after the label: "Basic earnings per share (2)  $ 20.68"
-            label_words = [w["t"] for w in ln[:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-14:]
+            label_words = [w["t"] for w in ln[:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-24:]
             label = unsplit(" ".join(label_words))
             if not label and li > 0:
                 label = _section_total(lines, li) or " ".join(w["t"] for w in lines[li - 1] if not is_figure(w["t"]))[:80]
