@@ -44,6 +44,8 @@ financial instrument** and run locally (macOS, Windows, Linux) as a desktop app 
       Remaining gaps: Boston Properties (an LP/REIT 10-K) has no EPS; Generali tags no EPS; two explained gaps
       (AMD gross profit: amortisation sits in between; Boeing operating costs); Air Liquide's exchange-rate line is
       an issuer concept with a French label, shown as an explained gap.
+- [x] Accuracy measured (`bench/accuracy.py`): 269 FinanceBench 10-K PDFs against the values filed with the SEC
+      (data.sec.gov companyfacts): 99.4% of the figures read are right (v2.1.0: 93.8%), 98.3% of the main lines found.
 - [x] A real AI provider: the Claude subscription through the Claude Code CLI read Netflix's 2022 10-K end to end
       (the README screenshots).
 - [ ] SEC EDGAR live: covered by simulated responses in the tests.

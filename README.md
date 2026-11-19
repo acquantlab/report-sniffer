@@ -132,12 +132,40 @@ In untagged PDF/HTML the figures are the ones printed on the page:
 - In PDFs the rows are recognised from their labels on the page with the column periods and scale: years in either
   order (2022 2023 2024 or the reverse), quarter codes (1Q23 vs 1Q22), "Three Months Ended", "Thirteen Weeks Ended",
   "Second Quarter", dates printed on a line of their own; note-reference and "% to sales" columns are left out, labels
-  wrapped onto two lines are joined, the consolidated statements win over the parent-company ones and over segment
-  tables.
+  wrapped onto two lines are joined, the consolidated statements win over the parent-company, guarantor and quarterly
+  ones, over an investee's statements for older years and over segment and MD&A tables; a statement carried over to the
+  next page keeps its scale and columns; a total printed without a label closes its section ("Total assets"); EPS
+  under "Basic" / "Diluted" headings, tax lines whose wording gives their sign ("Benefit from (provision for) income
+  taxes") and titles that the PDF prints with broken words ("Balance Shee t") are read too.
 - **Banks and insurers**: net interest and other banking income, total net revenue, insurance revenue (IFRS 17) count
   as revenue; free cash flow is not computed for them (capex means little for a bank's cash flow statement).
 - **ESEF reports** laid out with page containers (`pf`, `page…` classes, nested) or with no pages at all (the text
   is cut into pages at headings) are split too; issuer-specific concepts are recognised by the label of their row.
+
+## Accuracy
+
+How many figures read from an untagged PDF are right is measured, not guessed: `bench/accuracy.py` reads the 269
+annual reports (10-K PDFs, 2015–2023, 32 US companies from tech to banks, utilities and retail) of
+[FinanceBench](https://github.com/patronus-ai/financebench) by rules, with no AI, and compares every statement
+figure it reads — revenue, operating income, pre-tax income, taxes, net income, diluted EPS, cash, current and total
+assets and liabilities, equity, operating/investing/financing cash flows, capex and more, for the current and the prior
+year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
+([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
+
+| On the 269 10-K PDFs | v2.1.0 | v2.2.0 |
+|---|---|---|
+| Figures read that equal the filed value | 93.8% (627 wrong) | **99.4%** (72 wrong of 11,628) |
+| Main lines found (16 lines × 2 years) | 78.8% | **98.3%** |
+
+The rules were fixed on the 40 latest reports and then checked on the other years, which they had not seen
+(2019: 100% right; 2015–2018 and 2020–2021: 99.1%). What is still wrong comes from unusual layouts: a line printed
+only in a table with another layout, an investee's statements laid out like the company's own. The page of every
+figure is shown, so it can be checked. Inline XBRL filings need no such measure: their figures are the tags
+themselves. Not measured yet: quarterly reports, earnings releases and non-US reports in PDF.
+
+```
+SNIFFER_SEC_UA="Your Name you@example.com" .venv/bin/python bench/accuracy.py 2019 2020   # or: latest, APPLE_2022_10K
+```
 
 ## Report
 
@@ -341,8 +369,8 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   filings.xbrl.org and SEC EDGAR answer "busy" (HTTP 429/503) at times: the app waits and retries three times.
 - Untagged PDFs are read from their layout: a statement printed as an image (a scan) has no text to read, and an
   unusual layout can leave a line unread or take it from another table; the page of every figure is shown so it can
-  be checked. Checked on 44 real SEC filings and earnings releases (FinanceBench) and 21 ESEF reports. A diluted EPS row labelled only by a section header above it ("Earnings per share — diluted:")
-  may be missed.
+  be checked. On 269 real 10-K PDFs 99.4% of the figures read equal the values filed with the SEC (see
+  [Accuracy](#accuracy)); quarterly reports, earnings releases and ESEF reports were checked by hand, not measured.
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
@@ -367,6 +395,7 @@ analyst/locales/              translations of the reports and messages (one JSON
 analyst/fonts/                fonts embedded in the PDF report, with their licenses
 web/                          interface (texts in web/i18n.js), sniffer animation, live report
 tests/                        offline tests on synthetic documents and simulated APIs
+bench/accuracy.py             accuracy benchmark on real 10-K PDFs against the values filed with the SEC (needs the network)
 ```
 
 ## Tests

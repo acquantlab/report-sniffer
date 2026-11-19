@@ -22,10 +22,12 @@ METRICS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
     "gross_profit": ("Margine lordo", "Gross profit", "flow", ("GrossProfit",)),
     "rnd": ("Ricerca e sviluppo", "R&D", "flow", ("ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost")),
     "operating_income": ("Utile operativo", "Operating income", "flow", ("OperatingIncomeLoss", "ProfitLossFromOperatingActivities")),
+    # not "…BeforeIncomeTaxesDomestic": the domestic part only (McDonald's: 1,845.6 of 7,825.4); a total tagged with a
+    # company's own concept is found by its row label instead
     "pretax_income": ("Utile ante imposte", "Pre-tax income", "flow", (
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
         "IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
-        "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic", "ProfitLossBeforeTax")),
+        "ProfitLossBeforeTax")),
     "income_tax": ("Imposte", "Income taxes", "flow", ("IncomeTaxExpenseBenefit", "IncomeTaxExpenseContinuingOperations")),
     "net_income": ("Utile netto", "Net income", "flow", (
         "NetIncomeLoss", "ProfitLossAttributableToOwnersOfParent", "NetIncomeLossAvailableToCommonStockholdersBasic", "ProfitLoss")),
@@ -35,8 +37,9 @@ METRICS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
         "DilutedEarningsLossPerShareFromContinuingOperations", "BasicAndDilutedEarningsLossPerShare")),
     "diluted_shares": ("Azioni diluite (media)", "Diluted shares", "shares", (
         "WeightedAverageNumberOfDilutedSharesOutstanding", "AdjustedWeightedAverageShares", "WeightedAverageNumberOfShareOutstandingBasicAndDiluted")),
+    # not "InterestPaidNet": interest paid in cash is not the expense of the year
     "interest_expense": ("Interessi passivi", "Interest expense", "flow", (
-        "InterestExpense", "InterestExpenseNonoperating", "InterestExpenseDebt", "InterestExpenseBorrowings", "FinanceCosts", "InterestPaidNet")),
+        "InterestExpense", "InterestExpenseNonoperating", "InterestExpenseDebt", "InterestExpenseBorrowings", "FinanceCosts")),
     "cash": ("Cassa e equivalenti", "Cash & equivalents", "stock", (
         "CashAndCashEquivalentsAtCarryingValue", "CashAndCashEquivalents",
         "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents", "Cash")),
