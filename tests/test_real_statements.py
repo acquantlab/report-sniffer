@@ -278,3 +278,29 @@ def test_figures_go_under_the_column_they_sit_in(no_ai, tmp_path):
     assert m["fx_effect"]["cur"] == 9_000_000 and m["fx_effect"]["prev"] == -52_000_000
     assert m["cash_change"]["cur"] == 62_000_000 and m["cash_change"]["prev"] == 2_962_000_000
     assert m["net_income"]["cur"] == 46_000_000 and m["net_income"]["prev"] == 303_000_000
+
+
+def test_ligatures_percent_columns_and_a_title_at_the_foot(no_ai, tmp_path):
+    """eBay's PDFs give "fi" and "fl" as an unknown character ("Income tax bene￾t", "Cash ￾ows"); J&J sets a
+    "Percent to Sales" column beside each year's amounts; eBay titles its cash flow statement at the foot of the page
+    of its statement of income and prints a quarterly revenue table under it overleaf."""
+    pytest.importorskip("reportlab")
+    assert generic.ligatures("Income tax bene￾t (provision)") == "Income tax benefit (provision)"
+    assert generic.ligatures("Cash ￾ows from ￾nancing activities") == "Cash flows from financing activities"
+    rows = [("Sales to customers", "24,746", "100.0", "23,426", "100.0", "5.6"), ("Cost of products sold", "7,926", "32.0", "7,598", "32.4", "4.3"),
+            ("Selling, marketing and administrative", "6,195", "25.0", "6,008", "25.6", "3.1"),
+            ("Earnings before provision for taxes on income", "(737)", "(3.0)", "5,862", "25.0", "(112.6)"),
+            ("Provision for taxes on income", "(669)", "(2.7)", "713", "3.0", "(193.8)"),
+            ("Net earnings", "(68)", "(0.3)", "5,149", "22.0", "(101.3)")]
+    head = ["Example Health and Subsidiaries", "Condensed Consolidated Statement of Earnings", "(Unaudited; in Millions)",
+            "First Quarter 2023 2022 Percent"]
+    jj = []
+    y = 680
+    for label, *vals in rows:
+        jj.append((50, y, label, False))
+        jj += [(x, y, v, True) for x, v in zip((380, 440, 520, 580, 650), vals)]
+        y -= 14
+    jj = [(50, 740 - 14 * i, h, False) for i, h in enumerate(head)] + [(380, 700, "2023", True), (520, 700, "2022", True)] + jj
+    m = _run(tmp_path, [jj])["fin"]["metrics"]
+    assert m["net_income"]["cur"] == -68_000_000 and m["net_income"]["prev"] == 5_149_000_000
+    assert m["income_tax"]["prev"] == 713_000_000
