@@ -44,7 +44,7 @@ MAX_FACTS_PAGE = 400
 
 def parse_loose(t: str) -> Optional[float]:
     s = t.strip().replace("−", "-").replace("–", "-").replace("’", "").replace("'", "").replace(" ", "").replace(" ", "")
-    neg = s.startswith("(") and s.endswith(")") or s.startswith("-")
+    neg = s.startswith("(") or s.startswith("-")         # "(2,597)", also when the PDF splits off the ")"
     s = re.sub(r"[^\d.,]", "", s)
     if not s or not any(c.isdigit() for c in s):
         return None
@@ -63,6 +63,19 @@ def parse_loose(t: str) -> Optional[float]:
     except ValueError:
         return None
     return -v if neg else v
+
+
+# words of statement titles and rows that some PDFs print with a space inside ("Balance Shee t", "Comp rehensive")
+_VOCAB = ("consolidated", "consolidating", "condensed", "statements", "statement", "balance", "sheets", "sheet", "income", "operations",
+          "earnings", "comprehensive", "flows", "equity", "financial", "position", "condition", "shareholders", "stockholders",
+          "shareowners", "changes", "revenues", "revenue", "assets", "liabilities", "diluted", "investing", "financing", "operating",
+          "activities", "expenses", "provision", "taxes", "equivalents")
+_SPLIT = re.compile(r"\b(?:" + "|".join(" ?".join(w) for w in sorted(_VOCAB, key=len, reverse=True)) + r")\b", re.I)
+
+
+def unsplit(text: str) -> str:
+    """Statement words the PDF spaces apart ("Consolidated Balance Shee t", "Statements of Comp rehensive Income")."""
+    return _SPLIT.sub(lambda m: m.group().replace(" ", ""), text) if " " in text else text
 
 
 def is_figure(token: str, allow_digit: bool = False) -> bool:
@@ -108,7 +121,8 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
         page = pdf[i]
         sizes.append(page.get_size())
         tp = page.get_textpage()
-        texts.append(tp.get_text_range() or "")
+        # words some PDFs separate with no-break spaces or bare line feeds ("Consolidated\nStatements\nof\nIncome")
+        texts.append(unsplit(re.sub(r"(?<!\r)\n|\xa0", " ", tp.get_text_range() or "")))
         tp.close()
         page.close()
     chosen = best_pages(texts)
@@ -142,7 +156,8 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
                 f = figs[id(wd)]
                 fid = len(facts)
                 facts.append({"id": fid, "label": f["label"] or t("Cifra", "Figure"), "value": f["value"], "display": wd["t"], "page": i + 1,
-                              "kind": "num", "col": "Valore", "key": f["score"] >= 2, "score": f["score"]})
+                              "kind": "num", "col": "Valore", "key": f["score"] >= 2, "score": f["score"], "inline": f["inline"],
+                              "x1": round(wd["x"] + wd["w"], 1)})
                 attrs = f' class="w xf" data-f="{fid}"'
             elif id(wd) in line_heads:
                 hid = len(headings)
@@ -156,7 +171,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
             "html": (f'<div class="pdfpage" style="width:{w * scale:.0f}px;height:{h * scale:.0f}px">'
                      f'<img src="{img_url}/p{i + 1}.jpg" alt="">{"".join(spans)}</div>'),
         })
-        page_text.append(" ".join(wd["t"] for wd in words))
+        page_text.append(unsplit(" ".join(wd["t"] for wd in words)))
     meta = clean_title((pdf.get_metadata_dict().get("Title") or "").strip())
     if re.search(r"_|\d[\d.-]{3,}|^exhibit|^ex-?\d", meta, re.I):
         meta = company_line(texts[:2]) or meta                   # "Q1 23_EarningsRelease", "Exhibit 99.1 - 6.30.2023"
@@ -241,7 +256,7 @@ def _score_text(text: str) -> float:
                 label.append(tok)
         if row_figs and label and statements.match(" ".join(label)):
             score += 2                                     # a financial statement row
-    if statements.STATEMENT_TITLE.search(text[:700]):
+    if statements.title_match(text):
         score += 30                                        # a page titled as a statement
     return score + 0.1 * nfig
 
@@ -301,14 +316,30 @@ def _lines(words: list[dict]) -> list[list[dict]]:
 def _label_figures(words: list[dict]) -> list[dict]:
     out = []
     lines = _lines(words)
+    # the page's columns of amounts: where the formatted amounts end (their right edges, a ")" aside)
+    def edge(w):
+        return w["x"] + w["w"] - (3.5 if w["t"].endswith(")") else 0)
+
+    groups: list[list[float]] = []
+    for e in sorted(edge(w) for ln in lines for w in ln if is_figure(w["t"]) and re.search(r"\d[.,]\d", w["t"])):
+        if groups and e - groups[-1][-1] <= 8:
+            groups[-1].append(e)
+        else:
+            groups.append([e])
+    columns = [sorted(g)[len(g) // 2] for g in groups if len(g) >= 3]
+
+    def in_column(w):
+        return any(abs(edge(w) - c) <= 8 for c in columns)
+
     for li, ln in enumerate(lines):
         # a 1-2 digit number in front of a row of formatted amounts is a note reference, not a figure;
-        # between the amounts it is one ("Net income  $ (6,841)  $ 78  $ (5,865)")
+        # between the amounts it is one ("Net income  $ (6,841)  $ 78  $ (5,865)"), and so it is in the column of
+        # the amounts ("Net increase in cash  62  2,962  (3,241)", "… on cash  9  (52)  (51)")
         amount_x = [w["x"] for w in ln if is_figure(w["t"]) and re.search(r"\d[.,]\d", w["t"])]
         for k, wd in enumerate(ln):
             if not is_figure(wd["t"], allow_digit=True):
                 continue
-            if len(amount_x) >= 2 and re.fullmatch(r"\d{1,2}", wd["t"]) and wd["x"] < min(amount_x):
+            if len(amount_x) >= 2 and re.fullmatch(r"\d{1,2}", wd["t"]) and wd["x"] < min(amount_x) and not in_column(wd):
                 continue
             prev_w = ln[k - 1]["t"] if k > 0 else ""
             if re.fullmatch(r"\d{1,2},?", wd["t"]) and MONTH_END.search(prev_w):
@@ -322,25 +353,96 @@ def _label_figures(words: list[dict]) -> list[dict]:
                 continue                                  # "(17 CFR 240.14d-2(b))"
             if re.fullmatch(r"\(\d\)", wd["t"]) and re.search(r"[A-Za-z]$", prev_w) and (next_w in ("$", "€", "£") or re.search(r"\d[,.]\d", next_w)):
                 continue                                  # a footnote mark after the label: "Basic earnings per share (2)  $ 20.68"
-            label_words = [w["t"] for w in ln[:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-14:]
-            label = " ".join(label_words)
+            label_words = [w["t"] for w in ln[:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-24:]
+            label = unsplit(" ".join(label_words))
             if not label and li > 0:
-                label = " ".join(w["t"] for w in lines[li - 1] if not is_figure(w["t"]))[:80]
-            elif label[:1].islower() and li > 0 and not any(is_figure(w["t"]) for w in lines[li - 1]):
-                # a row label wrapped onto two lines: "Effect of exchange" / "rate fluctuations on cash … (6)"
-                head = " ".join(w["t"] for w in lines[li - 1])
-                if len(head) <= 80 and head[:1].isupper():
-                    label = head + " " + label
+                label = _section_total(lines, li) or " ".join(w["t"] for w in lines[li - 1] if not is_figure(w["t"]))[:80]
+            elif li > 0 and (label[:1].islower() or WRAPS.search(" ".join(w["t"] for w in lines[li - 1]))) \
+                    and not any(is_figure(w["t"]) and not _in_text(lines[li - 1], j) for j, w in enumerate(lines[li - 1])):
+                # a row label wrapped onto two lines: "Effect of exchange" / "rate fluctuations on cash … (6)",
+                # "… BEFORE TAXES AND EQUITY IN EARNINGS OF" / "AFFILIATES 1,029", "… net of $53, $123 and $48, respectively,
+                # of non-cash capital" / "expenditures (819)"
+                # … or onto several, in a narrow label column ("Equity in" / "earnings of" / "affiliated" / "companies (299)")
+                parts = []
+                for j in range(li - 1, max(-1, li - 6), -1):
+                    prev_ln = lines[j]
+                    if any(is_figure(w["t"]) and not _in_text(prev_ln, k) for k, w in enumerate(prev_ln)):
+                        break
+                    parts.insert(0, " ".join(w["t"] for w in prev_ln))
+                    if parts[0][:1].isupper() or len(" ".join(parts)) > 140:
+                        break
+                head = " ".join(parts)
+                if parts and len(head) <= 140 and head[:1].isupper():
+                    label = unsplit(head + " " + label)
             v = parse_loose(wd["t"])
             if v is None:
                 continue
             sc = score_label(label)
-            if re.fullmatch(r"\d", wd["t"]) and sc < 3:
+            if re.fullmatch(r"\d", wd["t"]) and sc < 3 and not (in_column(wd) and any(is_figure(w["t"]) for w in ln if w is not wd)):
                 continue
             if wd["t"].endswith("%"):
                 sc += 0.5
-            out.append({"word": wd, "label": label[:120], "value": v, "score": sc})
+            # a number in a sentence, not a table cell: "net of $35, $46 and $32, respectively", "2022, $1; 2021, $2"
+            inline = _in_text(ln, k)
+            out.append({"word": wd, "label": label[:120], "value": v, "score": sc, "inline": inline})
     return out
+
+
+WRAPS = re.compile(r"\b(of|and|to|for|in|on|from|before|by|with|at|the|or|net|less|including|excluding)\s*$", re.I)
+
+
+def _in_text(ln: list[dict], k: int) -> bool:
+    """The number at position k of a line sits in a sentence ("net of $53, $123 and $48, respectively"), not a column."""
+    t = ln[k]["t"]
+    nxt = ln[k + 1]["t"] if k + 1 < len(ln) else ""
+    prv = ln[k - 1]["t"] if k > 0 else ""
+    return bool(re.search(r"[,;]$", t) or nxt[:1].islower() or re.fullmatch(r"(19|20)\d\d[,:;]?", prv))
+
+
+def _section_total(lines: list[list[dict]], li: int) -> str:
+    """A line of amounts without a label right under a row of a statement is the total of the section it closes:
+    "Total current assets" under "Current assets:", "Total assets" under "ASSETS" when the sections in between have
+    their own totals ("Total other assets" … "$ 45,692,206"). Not when the section's total is printed further down
+    (an unlabeled subtotal before "Less: treasury stock"), nor a page number."""
+    def figs(ln):
+        # amounts in columns: not footnote marks, not numbers inside a wrapped label ("included $7,709 and $8,265 at …")
+        return [w for k, w in enumerate(ln) if is_figure(w["t"]) and not re.fullmatch(r"\(\d\)", w["t"]) and not _in_text(ln, k)]
+
+    def text(ln):
+        return re.sub(r"\s+", " ", " ".join(w["t"] for w in ln if not is_figure(w["t"]))).strip(" :")
+
+    if len(figs(lines[li])) < 2 or not figs(lines[li - 1]) or not text(lines[li - 1]):
+        return ""                                       # under a label line: a row wrapped onto two lines
+    closed, less = set(), False
+    for j in range(li - 1, max(0, li - 60) - 1, -1):
+        ln = lines[j]
+        t, has_fig = text(ln), bool(figs(ln))
+        m = re.match(r"total (.+)", t, re.I)
+        if has_fig and m:
+            closed.add(m.group(1).lower())
+            continue
+        if has_fig and not t:
+            above = _section_total(lines, j)            # another unlabeled total: the section it closes is closed
+            if above.startswith("Gross ") and less:
+                return "Net " + above[6:]               # "… / Less: Promotional allowances / 9,455,123": net revenues
+            if above:
+                closed.add(above.split(" ", 1)[1].lower())
+            continue
+        if has_fig and re.match(r"less\b", t, re.I):
+            less = True
+        if has_fig or not t:
+            continue
+        if len(t) > 60 or t.endswith(".") or not t[:1].isupper() or re.search(r"\d", t):
+            continue                                    # a sentence or a note, not a section heading
+        if t.lower() in closed:
+            continue                                    # a section with its own total line
+        if any(text(nx).lower() == "total " + t.lower() for nx in lines[li + 1:li + 30]):
+            return ""                                   # the section's total comes later: this is a subtotal
+        name = t.lower() if t.isupper() else t[:1].lower() + t[1:]
+        if li + 1 < len(lines) and re.match(r"less\b", text(lines[li + 1]), re.I):
+            return "Gross " + name                      # amounts deducted from it follow
+        return "Total " + name
+    return ""
 
 
 def _heading_lines(words: list[dict], hsize: float) -> dict[int, str]:
