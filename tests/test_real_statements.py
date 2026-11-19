@@ -304,3 +304,21 @@ def test_ligatures_percent_columns_and_a_title_at_the_foot(no_ai, tmp_path):
     m = _run(tmp_path, [jj])["fin"]["metrics"]
     assert m["net_income"]["cur"] == -68_000_000 and m["net_income"]["prev"] == 5_149_000_000
     assert m["income_tax"]["prev"] == 713_000_000
+
+
+def test_tagged_revenue_is_the_total_the_filing_tags():
+    """American Express tags RevenueFromContractWithCustomerExcludingAssessedTax (34.2bn) and, as its total,
+    RevenuesNetOfInterestExpense (52.9bn): the tagged path takes the total, not the first concept of its list."""
+    from analyst import financials as F, ixbrl
+    html = ('<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"><body><div>'
+            '<ix:header><ix:resources><xbrli:context xmlns:xbrli="http://www.xbrl.org/2003/instance" id="c1"><xbrli:entity>'
+            '<xbrli:identifier scheme="http://www.sec.gov/CIK">1</xbrli:identifier></xbrli:entity><xbrli:period>'
+            '<xbrli:startDate>2022-01-01</xbrli:startDate><xbrli:endDate>2022-12-31</xbrli:endDate></xbrli:period></xbrli:context>'
+            '</ix:resources></ix:header>'
+            '<p>Revenue from contracts <ix:nonFraction name="us-gaap:RevenueFromContractWithCustomerExcludingAssessedTax" contextRef="c1" '
+            'unitRef="usd" decimals="-6" scale="6">34,219</ix:nonFraction></p>'
+            '<p>Total revenues net of interest expense <ix:nonFraction name="us-gaap:RevenuesNetOfInterestExpense" contextRef="c1" '
+            'unitRef="usd" decimals="-6" scale="6">52,862</ix:nonFraction></p></div></body></html>')
+    doc = ixbrl.parse(html.encode())
+    m = F.extract(doc)["metrics"]
+    assert m["revenue"]["cur"]["value"] == 52_862_000_000

@@ -15,9 +15,11 @@ from .ixbrl import Fact, IxDoc
 # key -> (it, en, kind, candidate concepts by local name, tried in order)
 # kind: "flow" (duration) | "stock" (instant) | "ps" (per share, duration)
 METRICS: dict[str, tuple[str, str, str, tuple[str, ...]]] = {
+    # the total among these (see extract): a bank's revenue net of interest expense is more than its fees from contracts
     "revenue": ("Ricavi", "Revenue", "flow", (
         "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "RevenueFromContractWithCustomerIncludingAssessedTax",
-        "SalesRevenueNet", "Revenue", "RevenueFromContractsWithCustomers", "RevenuesNetOfInterestExpense", "InsuranceRevenue")),
+        "SalesRevenueNet", "Revenue", "RevenueFromContractsWithCustomers", "RevenuesNetOfInterestExpense", "InsuranceRevenue",
+        "RegulatedAndUnregulatedOperatingRevenue")),
     "cost_of_revenue": ("Costo del venduto", "Cost of revenue", "flow", ("CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfSales")),
     "gross_profit": ("Margine lordo", "Gross profit", "flow", ("GrossProfit",)),
     "rnd": ("Ricerca e sviluppo", "R&D", "flow", ("ResearchAndDevelopmentExpense", "ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost")),
@@ -169,15 +171,22 @@ def extract(doc: IxDoc) -> dict:
 
     metrics = {}
     for key, (it, en, kind, concepts) in METRICS.items():
+        found = []
         for concept in concepts:
             facts = by_local.get(concept, [])
             cur = _pick([f for f in facts if per.role(f) == "cur"], doc.page_fact_count)
             if cur is None:
                 continue
             prev = _pick([f for f in facts if per.role(f) == "prev"], doc.page_fact_count)
+            found.append((cur, prev))
+            if key != "revenue":
+                break
+        if found:
+            # revenue: the total of the concepts the filing tags (American Express: revenues net of interest expense,
+            # 52.9bn, beside revenue from contracts with customers, 34.2bn)
+            cur, prev = max(found, key=lambda cp: cp[0].value or 0) if key == "revenue" else found[0]
             metrics[key] = {"key": key, "it": it, "en": en, "kind": kind,
                             "cur": _fact_dict(cur, doc.units), "prev": _fact_dict(prev, doc.units) if prev else None}
-            break
     # extension concepts (a bank's "isp:GrossIncome"): recognise the line by the label of its table row
     from . import statements
     missing = set(METRICS) - set(metrics)
