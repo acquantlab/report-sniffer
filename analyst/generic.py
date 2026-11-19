@@ -73,6 +73,22 @@ _VOCAB = ("consolidated", "consolidating", "condensed", "statements", "statement
 _SPLIT = re.compile(r"\b(?:" + "|".join(" ?".join(w) for w in sorted(_VOCAB, key=len, reverse=True)) + r")\b", re.I)
 
 
+_LIG = {"\ufb00": "ff", "\ufb01": "fi", "\ufb02": "fl", "\ufb03": "ffi", "\ufb04": "ffl"}
+
+
+def ligatures(text: str) -> str:
+    """Ligatures as letters: "ﬁ" as "fi", and the "fi"/"fl" some PDFs give as an unknown character ("bene\ufffet",
+    "Cash \ufffeows", "\ufffenancing")."""
+    if not any(c in text for c in "\ufffe\ufffd\ufb00\ufb01\ufb02\ufb03\ufb04"):
+        return text
+    for k, v in _LIG.items():
+        text = text.replace(k, v)
+    text = re.sub(r"[\ufffe\ufffd](?=cien)", "ffi", text)                             # "su\ufffecient"
+    text = re.sub(r"[\ufffe\ufffd](?=(ect|ice|er|set|ord|ort))", "ff", text)          # "E\ufffeect of exchange", "o\ufffeset"
+    text = re.sub(r"[\ufffe\ufffd](?=(ow|uct|ex|oor|eet|at|ag|ight|y)\w*)", "fl", text)
+    return re.sub(r"(?<=\w)[\ufffe\ufffd](?=\w)|[\ufffe\ufffd](?=[a-z])", "fi", text)
+
+
 def unsplit(text: str) -> str:
     """Statement words the PDF spaces apart ("Consolidated Balance Shee t", "Statements of Comp rehensive Income")."""
     return _SPLIT.sub(lambda m: m.group().replace(" ", ""), text) if " " in text else text
@@ -122,7 +138,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
         sizes.append(page.get_size())
         tp = page.get_textpage()
         # words some PDFs separate with no-break spaces or bare line feeds ("Consolidated\nStatements\nof\nIncome")
-        texts.append(unsplit(re.sub(r"(?<!\r)\n|\xa0", " ", tp.get_text_range() or "")))
+        texts.append(unsplit(ligatures(re.sub(r"(?<!\r)\n|\xa0", " ", tp.get_text_range() or ""))))
         tp.close()
         page.close()
     chosen = best_pages(texts)
@@ -272,7 +288,7 @@ def _words(tp, page_h: float) -> list[dict]:
     def flush():
         nonlocal cur, box
         if cur and box:
-            t = "".join(cur).strip()
+            t = ligatures("".join(cur).strip())
             if t:
                 x0, y0, x1, y1 = box
                 words.append({"t": t, "x": x0, "y": page_h - y1, "w": max(x1 - x0, 1), "h": max(y1 - y0, 4)})

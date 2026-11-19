@@ -66,7 +66,8 @@ PATTERNS: dict[str, list[str]] = {
     "liab_and_equity": [r"total liabilities(,| and) .*(equity|deficit|investment)", r"totale passivit[aà] e patrimonio netto"],
     "temp_equity": [r"(total )?redeemable (convertible )?(preferred|preference) (stock|shares)(,.*)?", r"(total )?(temporary|mezzanine) equity"],
     "equity": [r"total (?!.*liabilit)[\w .,&'’-]*?(stockholders|shareholders|share-holders|shareowners)['’]? (equity|deficit|investment|equity \(deficit\)|\(deficit\) equity)",
-               r"total equity( \(deficit\))?", r"total deficit", r"(totale )?patrimonio netto( totale)?"],
+               r"total equity( \(deficit\))?", r"total deficit", r"(totale )?patrimonio netto( totale)?",
+               r"(stockholders|shareholders|shareowners)['’]? equity( \(deficit\))?"],      # a release's condensed balance sheet
     "cfo": [_CF + r"operating activities( (of|from) continuing operations)?", _CF + r"operations",
             r"cash (flows? )?(generated )?from operating activities", r"cash generated from operations",
             r"flusso di cassa (netto )?(generato )?(da|dalle|dell'|delle) attivit[aà] operativ[ae]", r"flussi di cassa (netti )?(da|dalle) attivit[aà] operative"],
@@ -191,7 +192,9 @@ def _titles(text: str, limit: int = 700):
 def _title_spots(text: str, limit: int):
     yield from STATEMENT_TITLE.finditer(text[:limit])
     top = _head(text, 150)
-    if limit < len(text) and len(header_years(top)) >= 2 and HEADER_NEAR.search(top) and not re.search(r"\.\s+\w", top):
+    prose = re.search(r"\.\s+\w|\b([a-z]+\s+){6}", top)          # a sentence, not a column header ("… we have recast certain prior …")
+    if limit < len(text) and len(header_years(top)) >= 2 and not prose \
+            and (HEADER_NEAR.search(top) or re.search(r"\d,\d{3}", _head(text, 300))):
         # some PDFs give the page's title last ("…Weighted-average diluted shares 2,970.0 … Consolidated statements of
         # income  JPMorgan Chase & Co./2022 Form 10-K 159"): a title in the closing lines of a page that opens with columns
         yield from STATEMENT_TITLE.finditer(text, max(limit, len(text) - 250))
@@ -298,7 +301,7 @@ def page_period(text: str) -> dict:
     """What the columns of a statement page are: their length in months (None for a balance sheet date) and end."""
     lo = text[:2500].lower()
     months = None
-    for pat, m in ((r"three months|(twelve|thirteen|sixteen|12|13|16) weeks|quarters? ended|(first|second|third|fourth) quarter|tre mesi|trimestre", 3),
+    for pat, m in ((r"three months|(twelve|thirteen|sixteen|12|13|16) weeks|quarters? ended|(first|second|third|fourth)[- ]quarter|tre mesi|trimestre", 3),
                    (r"six months|(twenty-four|twenty-six|24|26) weeks|half[- ]year|sei mesi|semestre", 6),
                    (r"nine months|(thirty-six|thirty-nine|thirty-six|36|39|40) weeks|nove mesi", 9),
                    (r"years? ended|fiscal years? ended|twelve months|(fifty-two|fifty-three|52|53) weeks|esercizio", 12)):
@@ -405,6 +408,15 @@ def statement_start(text: str) -> int:
     return 0
 
 
+def foot_title(text: str):
+    """A statement's title printed at the foot of a page that holds another statement, the statement itself overleaf
+    ("… $ 154 $ 137  eBay Inc. Unaudited Condensed Consolidated Statement of Cash Flows  8")."""
+    ms = list(_titles(text, len(text)))
+    if len(ms) >= 2 and ms[-1].start() > len(text) - 150 and re.fullmatch(r"[\s\d|]*", text[ms[-1].end():]):
+        return ms[-1]
+    return None
+
+
 def _headings(text: str):
     """The statement titles on a page that head a statement: at its top, or with a column header under them."""
     for m in _titles(text, len(text)):
@@ -487,8 +499,10 @@ def statement_pages(texts: list[str]) -> list[int]:
                 foot.add(i)
     pages = {i for _, i in best.values()} | {i for _, i in first.values()}
     pages |= {i for i in foot if i + 1 in pages}
-    pages |= {i + 1 for i in pages if i + 1 < len(texts) and re.search(r"continued", texts[i + 1][:300], re.I)
-              and page_statement(texts[i + 1]) == page_statement(texts[i])}
+    # the statement's next page, titled again ("… (continued)", or the title the PDF gives last)
+    pages |= {i + 1 for i in pages if i + 1 < len(texts) and page_statement(texts[i + 1]) == page_statement(texts[i])
+              and (re.search(r"continued", texts[i + 1][:300], re.I) or not re.search(r"comprehensive", (title_match(texts[i + 1]) or [""])[0], re.I))
+              and len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])) >= 12}
     # a statement that goes on over the next page (its totals there)
     return sorted(pages | {i + 1 for i in pages if i + 1 < len(texts) and i + 1 not in pages and _continues(texts[i + 1])})
 
@@ -569,15 +583,20 @@ def _right(f: dict) -> float:
 
 
 def page_columns(facts: list[dict]) -> list[float]:
-    """The columns of amounts on a PDF page: where the formatted amounts end, grouped (left to right)."""
-    xs = sorted(_right(f) for f in facts if "x1" in f and re.search(r"\d,\d{3}|\(\d|\d\.\d", f["display"]))
-    groups: list[list[float]] = []
-    for x in xs:
-        if groups and x - groups[-1][-1] <= 8:
-            groups[-1].append(x)
+    """The columns of amounts on a PDF page: where the formatted amounts end, grouped (left to right). A column of
+    percentages ("Percent to Sales", "% Change": one decimal, no thousands) is not one of them."""
+    fs = sorted((f for f in facts if "x1" in f and re.search(r"\d,\d{3}|\(\d|\d\.\d", f["display"])), key=_right)
+    groups: list[list[dict]] = []
+    for f in fs:
+        if groups and _right(f) - _right(groups[-1][-1]) <= 8:
+            groups[-1].append(f)
         else:
-            groups.append([x])
-    return [sorted(g)[len(g) // 2] for g in groups if len(g) >= 3]
+            groups.append([f])
+
+    def percent(g):
+        one = sum(1 for f in g if re.fullmatch(r"\(?-?\d{1,3}\.\d\)?%?", f["display"].strip("$ ")))
+        return one >= 0.8 * len(g)
+    return [_right(sorted(g, key=_right)[len(g) // 2]) for g in groups if len(g) >= 3 and not percent(g)]
 
 
 def by_position(nums: list, cols: list[float], n: int) -> Optional[list]:
@@ -644,6 +663,9 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         # a page that carries on the statement before it: read with that statement's title, scale and column years
         # (the last statement of that page: a release prints its balance sheet under its statement of income)
         last = list(_headings(raw[p - 1])) if p - 1 in page_text else []
+        foot = foot_title(raw[p - 1]) if p - 1 in page_text else None
+        if foot:
+            last = [foot]                              # the statement titled at the foot of the page before
         if last and not title_match(page_text[p]) \
                 and not re.search(r"notes to|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
                                   _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?", page_text[p][-300:], re.I):
@@ -706,8 +728,14 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     for p in sorted(page_text):
         first = next(_titles(raw[p], len(raw[p])), None)
         top = raw[p][:first.start()] if first else raw[p]
-        if p - 1 in page_text and kind_of[p - 1] and len(re.findall(r"\d,\d{3}", top)) >= 2:
-            kinds[p].add(kind_of[p - 1])               # its top carries on the statement of the page before
+        before = [m for m in _headings(raw[p - 1])] if p - 1 in page_text else []
+        foot = foot_title(raw[p - 1]) if p - 1 in page_text else None
+        if foot:
+            before = [foot]
+        if before and len(re.findall(r"\d,\d{3}", top)) >= 2:
+            # its top carries on the last statement of the page before (a release's cash flow statement under its
+            # statement of income goes on overleaf)
+            kinds[p].add(page_statement(before[-1].group()) or kind_of[p - 1])
     kinds = {p: k - {""} for p, k in kinds.items()}
     # the document's own statements: those of its latest year (not an investee's older ones printed after them), in
     # full rather than condensed (a 10-K's quarterly restatements)

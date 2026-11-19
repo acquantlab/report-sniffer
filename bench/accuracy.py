@@ -12,8 +12,10 @@ filed in XBRL with the SEC for the same period, in the same 10-K (data.sec.gov c
     missed      filed, but not read from the document
     precision = ok / (ok + wrong)        recall = ok / (ok + wrong + missed)
 
-usage:  .venv/bin/python bench/accuracy.py [latest | YEAR ... | DOC_NAME ...]
+usage:  .venv/bin/python bench/accuracy.py [latest | YEAR ... | DOC_NAME ... | quarterly]
         (default: the latest 10-K of each company; e.g. 2019 2020, or APPLE_2022_10K). JOBS=4 processes.
+        quarterly: the 10-Q reports and earnings releases (55), against the values filed for the same quarter (or
+        year to date) in the 10-Q or 10-K of that period; the period is the one the app reads (3M, 6M, 9M, FY).
 Needs the network (raw.githubusercontent.com, data.sec.gov); files are cached in bench/.cache. SEC asks for a
 User-Agent naming you: set SNIFFER_SEC_UA="Your Name you@example.com" (as for the app).
 """
@@ -28,6 +30,7 @@ from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from datetime import date
 from pathlib import Path
+from typing import Optional
 
 import httpx
 
@@ -197,16 +200,14 @@ def _vals(F, key, kind, mine, ce):
 
 
 def read(doc: str):
-    from analyst import generic, pipeline
+    from analyst import generic, i18n, pipeline
     data = get(RAW.format(doc), CACHE / f"{doc}.pdf")
     t0 = time.time()
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory() as tmp, i18n.using("en"):
         g = generic.pdf_document(data, Path(tmp), "/x")
-    fin = g.get("fin") or {}
-    if fin and pipeline._enough(fin["metrics"]):
-        x = {"metrics": fin["metrics"], "periods": fin.get("periods")}
-    else:
-        x = pipeline._statement_metrics(g) or {"metrics": {}}
+        fin = g.get("fin") or {}
+        x = {"metrics": fin["metrics"], "periods": fin.get("periods")} if fin and pipeline._enough(fin["metrics"]) else \
+            (pipeline._statement_metrics(g) or {"metrics": {}})
     m = {k: {w: ({"value": v[w]["value"], "display": v[w]["display"], "page": v[w]["page"]} if v.get(w) else None)
              for w in ("cur", "prev")} for k, v in x["metrics"].items()}
     cover = None
@@ -217,11 +218,89 @@ def read(doc: str):
             cover = datetime.strptime(f"{mm.group(1)[:3]} {mm.group(2)} {mm.group(3)}", "%b %d %Y").date()
         except ValueError:
             cover = None
+    # the end of the period the statements show: the latest "… ended June 30, 2023" / "As of …" date printed there
+    ends = []
+    for t in g["page_text"]:
+        for mo, dd, yy in re.findall(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+((?:19|20)\d\d)\b", t, re.I):
+            from datetime import datetime
+            try:
+                ends.append(datetime.strptime(f"{mo[:3].title()} {dd} {yy}", "%b %d %Y").date())
+            except ValueError:
+                pass
     return {"metrics": m, "pages": [p["n"] for p in g["pages"]], "periods": x.get("periods"), "secs": round(time.time() - t0, 1),
-            "total_pages": g["total_pages"], "cover": cover}
+            "total_pages": g["total_pages"], "cover": cover, "ends": ends}
 
 
-def close(a: float, g: float, display: str, key: str) -> bool:
+def months_of(label: str) -> Optional[int]:
+    """How long the period the app reads is, from its English label: "3M to Jun 2023", "H1 2023", "FY2023", "1Q23"."""
+    m = re.search(r"(\d+)M to", label or "")
+    if m:
+        return int(m.group(1))
+    if re.match(r"H[12] ", label or ""):
+        return 6
+    if re.match(r"FY", label or ""):
+        return 12
+    if re.search(r"\b[1-4]Q\d\d\b|\bQ[1-4] ", label or ""):
+        return 3
+    return None
+
+
+def truth_q(cik: int, end: date, months: int, F) -> dict:
+    """The values filed for the period of `months` ending on `end` (and the same period a year earlier; balance sheet:
+    at `end` and at the comparative date the filing shows), from the 10-Q or 10-K of that period."""
+    cf = json.loads(get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json", CACHE / f"cf{cik}.json"))
+    rows = [(c, u, r) for c, d in cf["facts"].get("us-gaap", {}).items() for u, rs in d["units"].items() for r in rs
+            if r.get("form") in ("10-Q", "10-K", "10-Q/A", "10-K/A")]
+    at_end = Counter(r["accn"] for c, u, r in rows if abs((_d(r["end"]) - end).days) <= 3)
+    if not at_end:
+        return {}
+    own = max(at_end, key=lambda a: at_end[a])
+    out = {"_accn": own, "_end": str(end)}
+    for key, spec in F.METRICS.items():
+        cs = [c for c in concepts(F, key) if c != "InterestPaidNet"]
+        vals = {"own": {"cur": defaultdict(list), "prev": defaultdict(list)}, "alt": {"cur": defaultdict(list), "prev": defaultdict(list)}}
+        for c, u, r in rows:
+            if c not in cs:
+                continue
+            e = _d(r["end"])
+            src = "own" if r["accn"] == own else "alt"
+            if spec[2] == "stock":
+                if r.get("start"):
+                    continue
+                w = "cur" if abs((e - end).days) <= 3 else "prev" if 60 <= (end - e).days <= 400 and src == "own" else None
+            else:
+                # the statement of income shows the quarter, the cash flow statement the year to date: any of them;
+                # per-share figures and share counts do not add up, so only for the period the app reads
+                spans_ok = (3, 6, 9, 12) if spec[2] == "flow" else (months,)
+                if not r.get("start") or min(abs((e - _d(r["start"])).days - k * 30.44) for k in spans_ok) > 20:
+                    continue
+                w = "cur" if abs((e - end).days) <= 3 else "prev" if 350 <= (end - e).days <= 380 else None
+            if w:
+                vals[src][w][c].append(r["val"])
+        if spec[2] == "flow":
+            # a quarter nobody filed on its own (the fourth, in a 10-K; a cash flow quarter, in a 10-Q year to date):
+            # the year to date less the year to date a quarter earlier, both filed
+            spans = defaultdict(set)
+            for c, u, r in rows:
+                if c in cs and r.get("start"):
+                    spans[(c, r["start"], r["end"])].add(r["val"])
+            for (c, st, en), va in list(spans.items()):
+                e = _d(en)
+                w = "cur" if abs((e - end).days) <= 3 else "prev" if 350 <= (end - e).days <= 380 else None
+                if not w or (e - _d(st)).days < 150:
+                    continue
+                for (c2, st2, en2), vb in spans.items():
+                    if c2 == c and st2 == st and 80 <= (e - _d(en2)).days <= 120:   # 13 to 16 weeks (PepsiCo's Q4)
+                        for a in va:
+                            for b in vb:
+                                vals["own"][w]["quarter:" + c].append(a - b)
+        if any(vals["own"][w] or vals["alt"][w] for w in ("cur", "prev")):
+            out[key] = {w: {c: sorted(set(v)) for c, v in vals["own"][w].items()} for w in ("cur", "prev")}
+            out[key]["alt"] = {w: {c: sorted(set(v)) for c, v in vals["alt"][w].items()} for w in ("cur", "prev")}
+    return out
+
+
+def close(a: float, g: float, display: str, key: str, slack: float = 1.0) -> bool:
     if key == "eps_diluted":
         return abs(a - g) <= 0.0051
     num = re.sub(r"[^\d.]", "", display or "")
@@ -231,7 +310,7 @@ def close(a: float, g: float, display: str, key: str) -> bool:
         shown = 0
     scale = abs(a) / shown if shown else 1
     unit = 10 ** round(math.log10(scale)) if scale > 0 else 1
-    return abs(a - g) <= max(0.51 * unit, 0.0005 * abs(g), 0.5)
+    return abs(a - g) <= max(0.51 * slack * unit, 0.0005 * abs(g), 0.5)    # a difference of two rounded figures: 2 units
 
 
 # a document line that differs from the tagged total, by the document's own layout (checked by hand)
@@ -249,18 +328,40 @@ def judge(key, o, cands, alt=None) -> str:
     only_alt = not allv
     allv += altv
     a = o["value"]
+    derived = [v for c, vs in cands.items() if c.startswith("quarter:") for v in vs]
     for v in allv:
-        if close(abs(a) if key in ABS else a, abs(v) if key in ABS else v, o["display"], key):
+        if close(abs(a) if key in ABS else a, abs(v) if key in ABS else v, o["display"], key, 2.0 if v in derived else 1.0):
             return "ok"
     return "unverified" if only_alt else "wrong"           # only later (possibly restated) filings report it
 
 
 def run_doc(args):
-    doc, company, fy = args
+    doc, company, fy = args[:3]
     from analyst import financials as F
     try:
         r = read(doc)
-        gt = truth(CIK[company], fy, F, r["cover"])
+        if len(args) > 3 and args[3] == "q":
+            flow = ((r["periods"] or {}).get("flow") or [""])[0]
+            months = months_of(flow)
+            month = re.search(r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* (\d{4})", flow)
+            year = re.search(r"(\d{4})", flow)
+            fq = re.search(r"\bQ([1-4]) (\d{4})|\b([1-4])Q(\d\d)\b", flow)
+            if month:
+                ends = [e for e in r["ends"] if e.strftime("%b") == month.group(1) and e.year == int(month.group(2))]
+            elif fq:
+                # a fiscal quarter ("Q4 2022"): a date that ends such a quarter, up to January of the next year
+                q, y = (int(fq.group(1)), int(fq.group(2))) if fq.group(1) else (int(fq.group(3)), 2000 + int(fq.group(4)))
+                months_q = {1: (3, 4), 2: (6, 7), 3: (9, 10), 4: (12, 1)}[q]
+                ends = [e for e in r["ends"] if e.month in months_q and (e.year == y or (q == 4 and e.month == 1 and e.year == y + 1))]
+            else:
+                ends = [e for e in r["ends"] if not year or e.year == int(year.group(1))]
+            if not months or not ends:
+                return {"doc": doc, "error": f"period not read: {flow!r}"}
+            # the date the statements print most ("… ended July 2, 2023"), the latest when the label names the month
+            end = max(ends) if month else Counter(ends).most_common(1)[0][0]
+            gt = truth_q(CIK[company], end, months, F)
+        else:
+            gt = truth(CIK[company], fy, F, r["cover"])
     except Exception as e:  # noqa: BLE001
         return {"doc": doc, "error": f"{type(e).__name__}: {e}"}
     res = []
@@ -287,6 +388,9 @@ def main():
     meta_file = CACHE / "financebench_document_information.jsonl"
     docs = [json.loads(line) for line in get(FB + "data/financebench_document_information.jsonl", meta_file).decode().splitlines() if line]
     sel = sys.argv[1:]
+    quarterly = sel == ["quarterly"]
+    if quarterly:
+        sel = sorted(d["doc_name"] for d in docs if d["doc_type"] in ("10q", "Earnings"))
     if not sel or sel == ["latest"]:
         last = {}
         for d in docs:
@@ -296,7 +400,7 @@ def main():
     elif sel[0].isdigit():
         sel = sorted(d["doc_name"] for d in docs if d["doc_type"] == "10k" and str(d["doc_period"]) in sel)
     meta = {d["doc_name"]: d for d in docs}
-    jobs = [(n, meta[n]["company"], meta[n]["doc_period"]) for n in sel]
+    jobs = [(n, meta[n]["company"], meta[n]["doc_period"]) + (("q",) if quarterly else ()) for n in sel]
     with ProcessPoolExecutor(int(os.environ.get("JOBS", "4"))) as ex:
         out = list(ex.map(run_doc, jobs))
     tag = os.environ.get("TAG", "run")
