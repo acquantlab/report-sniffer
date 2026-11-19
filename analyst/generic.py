@@ -345,9 +345,18 @@ def _label_figures(words: list[dict]) -> list[dict]:
                 # a row label wrapped onto two lines: "Effect of exchange" / "rate fluctuations on cash … (6)",
                 # "… BEFORE TAXES AND EQUITY IN EARNINGS OF" / "AFFILIATES 1,029", "… net of $53, $123 and $48, respectively,
                 # of non-cash capital" / "expenditures (819)"
-                head = " ".join(w["t"] for w in lines[li - 1])
-                if len(head) <= 140 and head[:1].isupper():
-                    label = head + " " + label
+                # … or onto several, in a narrow label column ("Equity in" / "earnings of" / "affiliated" / "companies (299)")
+                parts = []
+                for j in range(li - 1, max(-1, li - 6), -1):
+                    prev_ln = lines[j]
+                    if any(is_figure(w["t"]) and not _in_text(prev_ln, k) for k, w in enumerate(prev_ln)):
+                        break
+                    parts.insert(0, " ".join(w["t"] for w in prev_ln))
+                    if parts[0][:1].isupper() or len(" ".join(parts)) > 140:
+                        break
+                head = " ".join(parts)
+                if parts and len(head) <= 140 and head[:1].isupper():
+                    label = unsplit(head + " " + label)
             v = parse_loose(wd["t"])
             if v is None:
                 continue

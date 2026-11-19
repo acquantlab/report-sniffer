@@ -174,8 +174,8 @@ def _titles(text: str, limit: int = 700):
         if not text[start:start + 1].isupper():
             continue
         prev = re.search(r"([A-Za-z][\w'’&.-]*)[^\w]*$", text[max(0, start - 40):start])
-        if prev and re.fullmatch(PROSE_WORD, prev.group(1)):
-            continue
+        if prev and (re.fullmatch(PROSE_WORD, prev.group(1)) or re.search(r"['’]s$", prev.group(1))):
+            continue                                   # "in the …", "the Company's Consolidated Statements of …"
         if re.match(r"\.(\s|$)", text[m.end():m.end() + 30]):
             continue                                   # a title ends no sentence: "… in the Consolidated balance sheets."
         nxt = re.match(r"[ \t]*([a-z]\w*)", text[m.end():m.end() + 30])
@@ -455,15 +455,23 @@ def statement_pages(texts: list[str]) -> list[int]:
             best[kind] = (rank, i)
         if kind not in first or rank[:3] > first[kind][0]:
             first[kind] = (rank[:3], i)
+    foot = set()
     for i, t in enumerate(texts[:-1]):
         # a title at the foot of a page with the statement itself on the next one ("Consolidated Statements of Cash
         # Flows  $ in millions" / the columns overleaf)
         title = title_match(t)
         kind = page_statement(t)
-        if kind and title and kind not in best and len(re.findall(r"\(?\d[\d,]{2,}\)?", t)) < 12 and _continues(texts[i + 1]):
-            best[kind] = ((True, "consolidat" in title.group().lower(), True, 0), i + 1)
-            first.setdefault(kind, ((True, True, True), i))
+        if kind and title and len(re.findall(r"\(?\d[\d,]{2,}\)?", t)) < 12 and _continues(texts[i + 1]):
+            rank = (not re.search(NOT_PRIMARY, t[:300], re.I), "consolidat" in (t[:300] + " " + title.group()).lower(),
+                    not re.search(r"comprehensive", title.group(), re.I), len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])))
+            if kind not in best or rank > best[kind][0]:
+                best[kind] = (rank, i + 1)
+                foot.add(i)
+            if kind not in first or rank[:3] > first[kind][0]:
+                first[kind] = (rank[:3], i + 1)
+                foot.add(i)
     pages = {i for _, i in best.values()} | {i for _, i in first.values()}
+    pages |= {i for i in foot if i + 1 in pages}
     pages |= {i + 1 for i in pages if i + 1 < len(texts) and re.search(r"continued", texts[i + 1][:300], re.I)
               and page_statement(texts[i + 1]) == page_statement(texts[i])}
     # a statement that goes on over the next page (its totals there)
@@ -653,6 +661,9 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         m = title_match(t)
         return bool(m and re.search(r"condensed", t[max(0, m.start() - 60):m.end()], re.I))
     cond = {p: condensed(t) for p, t in page_text.items()}
+    # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
+    scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
+    doc_scale = max(set(scales), key=scales.count) if scales and len(set(scales)) == 1 else 1.0
 
     metrics, years = {}, None
     head: dict[str, dict] = {}
@@ -663,6 +674,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             # with the consolidated statement at hand, its lines from it only: not a figure elsewhere (a segment's, a
             # quarter's, the MD&A's), the parent company's or the guarantors' statements, the statement of equity
             cands = [c for c in cands if statement_of(key) in kinds[c[0]] and titled.get(c[0], 0) >= 2]
+            if any(year_of[c[0]] >= top_year for c in cands):
+                cands = [c for c in cands if year_of[c[0]] >= top_year]       # not an investee's older statements
             if not cands:
                 continue
         page, nums, label = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
@@ -679,7 +692,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         cur_f, prev_f = _columns(nums, ys, qs)
         if cur_f is None:
             continue                                   # nothing in the current column ("—")
-        scale = 1.0 if key in PER_SHARE else page_scale(text)
+        scale = 1.0 if key in PER_SHARE else (page_scale(text) if page_scale(text) != 1.0 else doc_scale)
         kind = F.METRICS[key][2] if key in F.METRICS else "flow"
         if kind == "shares":
             m = re.search(r"\bshares?\b[^.;)]{0,60}?\bin (thousands|millions)", text[:2500], re.I)

@@ -240,3 +240,19 @@ def test_two_statements_on_a_page(no_ai, tmp_path):
     assert m["cash"]["cur"] == 689_000_000 and m["total_assets"]["cur"] == 17_003_000_000
     assert m["current_liabilities"]["cur"] == 4_476_000_000 and m["liab_and_equity"]["cur"] == 17_003_000_000
     assert m["cfo"]["cur"] == 1_526_000_000 and m["revenue"]["cur"] == 14_694_000_000
+
+
+def test_labels_in_a_narrow_column_and_a_page_without_scale(no_ai, tmp_path):
+    """Corning 2015 wraps its row labels over several lines ("Net cash provided by operating" / "activities 2,809");
+    3M prints "(Millions…)" over every statement but its statement of income."""
+    pytest.importorskip("reportlab")
+    ops = _page(["Example Industrial Company", "Consolidated Statement of Income", "Years ended December 31"], ["2015", "2014"], [
+        ("Net sales", "$ 30,274", "$ 31,821"), ("Operating income", "7,223", "7,135"), ("Net income", "4,833", "4,956")])
+    bs = _page(["Example Industrial Company", "Consolidated Balance Sheet", "(Dollars in millions)"], ["2015", "2014"], [
+        ("Total assets", "32,883", "31,374"), ("Total equity", "11,747", "13,142")])
+    cf = _page(["Example Industrial Company", "Consolidated Statement of Cash Flows", "(In millions)"], ["2015", "2014"], [
+        ("Equity in|earnings of",), ("affiliated|companies", "(299)", "(266)"),
+        ("Net cash provided by operating|activities", "6,420", "6,626"), ("Net cash used in investing|activities", "(2,966)", "(1,656)")])
+    m = _run(tmp_path, [ops, bs, cf])["fin"]["metrics"]
+    assert m["revenue"]["cur"] == 30_274_000_000 and m["net_income"]["cur"] == 4_833_000_000
+    assert m["cfo"]["cur"] == 6_420_000_000 and m["cfi"]["cur"] == -2_966_000_000
