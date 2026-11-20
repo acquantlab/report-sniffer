@@ -1,3 +1,5 @@
+<img src="packaging/icon.png" width="96" align="right" alt="Report Sniffer icon">
+
 # Report Sniffer
 
 *by AC Quant Lab*
