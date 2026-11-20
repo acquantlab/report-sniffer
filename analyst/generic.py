@@ -427,19 +427,20 @@ AMOUNT = re.compile(r"[(\-−–]?[€$£]?(\d{1,3}(,\d{3})+|\d{1,3}(\.\d{3})+|\
 
 
 def thousands_sep(words: list[dict]) -> Optional[str]:
-    """How a document groups thousands: "," (1,234.5), "." (1.234,5) or " " (1 234,5), when its amounts say so
-    clearly; then "5.045" is 5.045 in the first and "5,045" is 5.045 in the others."""
+    """How a document groups thousands: "," (1,234.5), "." (1.234,5) or " " (1 234,5), when most of its amounts say
+    so (five to one); then "5.045" is 5.045 in the first and "5,045" is 5.045 in the others."""
     n = {",": 0, ".": 0, " ": 0}
     for w in words:
         t = w["t"].strip("()-−–$€£%")
-        for sep in n:
-            if re.fullmatch(r"\d{1,3}(" + re.escape(sep) + r"\d{3})+([.,]\d+)?", t) and (sep == " " or t.count(sep) >= 1):
-                if sep != " " and re.fullmatch(r"\d{1,3}" + re.escape(sep) + r"\d{3}", t):
-                    continue                      # "1,234" or "1.234" alone could be either
-                n[sep] += 1
+        if re.fullmatch(r"\d{1,3}(,\d{3})+(\.\d+)?", t):
+            n[","] += 1
+        elif re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d+)?", t):
+            n["."] += 1
+        elif re.fullmatch(r"\d{1,3}( \d{3})+([.,]\d+)?", t):
+            n[" "] += 1
     best = max(n, key=n.get)
     others = sum(v for k, v in n.items() if k != best)
-    return best if n[best] >= 8 and n[best] >= 10 * others else None
+    return best if n[best] >= 8 and n[best] >= 5 * others else None
 
 
 def _lines(words: list[dict]) -> list[list[dict]]:

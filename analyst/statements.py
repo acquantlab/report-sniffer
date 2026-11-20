@@ -142,13 +142,21 @@ SCALES_EU = [
 ]
 
 
+def shares_only(before: str) -> bool:
+    """A scale said of shares alone ("(number of shares in thousands)"), not of amounts too ("Dollars and shares in
+    millions", McDonald's)."""
+    return bool(re.search(r"shares?\b[^,;()]{0,15}$", before)) and not re.search(r"(dollars|amounts|\$|€|£|\b(eur|usd|dkk|sek|nok))[^,;()]*$", before)
+
+
 def page_scale(text: str) -> float:
+    """The scale the page states for its amounts: the first one it prints, not one said of shares ("Amounts in DKK
+    million … (number of shares in thousands)")."""
     t = text.lower()
-    for pat, k in SCALES:
-        if re.search(pat, t):
-            return k
-    hits = [(m.start(), k) for pat, k in SCALES_EU for m in [re.search(pat, t)] if m]
-    return min(hits)[1] if hits else 1.0
+
+    def first(pats):
+        hits = [(m.start(), k) for pat, k in pats for m in re.finditer(pat, t) if not shares_only(t[max(0, m.start() - 40):m.start()])]
+        return min(hits)[1] if hits else None
+    return first(SCALES) or first(SCALES_EU) or 1.0
 
 
 def page_currency(text: str) -> str:
@@ -475,9 +483,10 @@ FIGURES = re.compile(r"\(?\d[\d,]{2,}\)?|(?<![\w.,])\(?-?\d{1,3}[.,]\d\)?(?![\d%
 
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
-               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|associates and joint ventures|\beliminations\b"
+               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
-               r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+[A-Z][\w&.' -]{1,40}\s(ASA|AB|AG|SE|S\.?A\.?|N\.?V\.?|Oyj|plc|A/S|S\.p\.A\.)[ \t]*(\r?\n|$)")
+               r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
+               r"(?!\s+(and (its )?subsidiaries|group|consolidated))")
 
 
 BOILERPLATE = re.compile(r"(the |see )?(accompanying )?notes to (the )?(consolidated )?financial statements are an integral part of (these|this)"
@@ -528,12 +537,15 @@ def statement_pages(texts: list[str]) -> list[int]:
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250
+        cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I))
         rank = (not re.search(NOT_PRIMARY, head, re.I), top, "consolidat" in (head + " " + title.group()).lower(),
-                not re.search(r"comprehensive", head, re.I), figs)
-        if kind not in best or rank > best[kind][0]:
+                not re.search(r"comprehensive", head, re.I), not cond, figs)
+        # alike, the earlier one: a report prints the group's statements before the parent company's (VERBUND: 54 and 63
+        # figures), unless the later one is much fuller (the statement after a table of contents naming it: 20 and 39)
+        if kind not in best or rank[:5] > best[kind][0][:5] or (rank[:5] == best[kind][0][:5] and 0.7 * figs > best[kind][0][5]):
             best[kind] = (rank, i)
-        if kind not in first or rank[:4] > first[kind][0]:
-            first[kind] = (rank[:4], i)
+        if kind not in first or rank[:5] > first[kind][0]:
+            first[kind] = (rank[:5], i)
     foot = set()
     for i, t in enumerate(texts[:-1]):
         # a title at the foot of a page with the statement itself on the next one ("Consolidated Statements of Cash
@@ -542,12 +554,13 @@ def statement_pages(texts: list[str]) -> list[int]:
         kind = page_statement(t)
         if kind and title and title.start() > len(t) - 300 and len(FIGURES.findall(t)) < 12 and _continues(texts[i + 1]):
             rank = (not re.search(NOT_PRIMARY, t[:300], re.I), True, "consolidat" in t[max(0, title.start() - 60):title.end()].lower(),
-                    not re.search(r"comprehensive", title.group(), re.I), len(FIGURES.findall(texts[i + 1])))
+                    not re.search(r"comprehensive", title.group(), re.I),
+                    not re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I), len(FIGURES.findall(texts[i + 1])))
             if kind not in best or rank > best[kind][0]:
                 best[kind] = (rank, i + 1)
                 foot.add(i)
-            if kind not in first or rank[:4] > first[kind][0]:
-                first[kind] = (rank[:4], i + 1)
+            if kind not in first or rank[:5] > first[kind][0]:
+                first[kind] = (rank[:5], i + 1)
                 foot.add(i)
     pages = {i for _, i in best.values()} | {i for _, i in first.values()}
     pages |= {i for i in foot if i + 1 in pages}

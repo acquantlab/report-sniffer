@@ -431,3 +431,22 @@ def test_european_amounts_dates_notes_and_percentages():
     assert S._drop_note_ref([f("2.3", 2.3), f("-618.5", -618.5), f("-692.5", -692.5)], [2023, 2022])[0]["value"] == 2.3
     assert [x["display"] for x in S._amounts([f("511.4", 511.4), f("45%", 45), f("555.9", 555.9), f("45%", 45)], "gross_profit")] == ["511.4", "555.9"]
     assert S.note_column("EUR million Note 2023 2022 Net sales 2.1 1,129.8 1,248.4") and not S.note_column("2023 2022 Net sales 1,129.8")
+
+
+def test_the_group_not_the_parent_and_the_scale_of_amounts_not_shares():
+    """European reports print the parent company's own statements after the group's: "Income statement - Elkem ASA"
+    is the legal entity's, "… - Elkem Group" the group's. "The accompanying Notes to the Consolidated Financial
+    Statements" is no "Note" column (Nike's EPS "3.70" is no note number). The scale is the one the page states
+    first, not one said of shares ("Amounts in DKK million … (number of shares in thousands)"). A document's
+    thousands separator is the one most of its amounts use (an Italian bank: 41 "1,234" to 4 "5.045")."""
+    import re
+    assert re.search(S.NOT_PRIMARY, "Income statement - Elkem ASA Amounts in NOK million Note 2023 2022", re.I)
+    assert not re.search(S.NOT_PRIMARY, "Consolidated income statement - Elkem Group Amounts in NOK million", re.I)
+    assert not re.search(S.NOT_PRIMARY, "Statement of cash flows - Nokia Oyj and subsidiaries EUR million", re.I)
+    assert not re.search(S.NOT_PRIMARY, "Investments in associates and joint ventures 1,234 1,100", re.I)
+    assert not S.note_column("The accompanying Notes to the Consolidated Financial Statements are an integral part. "
+                             "(In millions, except per share data) 2015 2014 2013 Revenues $ 30,601")
+    assert S.page_scale("Group Financial Highlights Amounts in DKK million Shares (number of shares in thousands)") == 1e6
+    assert S.page_scale("(In millions, except per share data; shares in thousands)") == 1e6
+    words = [{"t": t} for t in ["23,843"] * 41 + ["5.045"] * 4]
+    assert generic.thousands_sep(words) == "," and generic.thousands_sep([{"t": "1.234.567"}] * 9 + [{"t": "5,04"}]) == "."
