@@ -117,9 +117,19 @@ def truth(f: dict) -> dict:
     return gt
 
 
+def english(pdf_path: Path) -> bool:
+    """A report in English: "the", "and", "of" are about one word in eight (0 in the Spanish and Swedish reports
+    some filers label "-en")."""
+    import pypdfium2 as pdfium
+    pdf = pdfium.PdfDocument(pdf_path.read_bytes())
+    t = " ".join(pdf[i].get_textpage().get_text_range() for i in range(0, len(pdf), max(1, len(pdf) // 40)))
+    return len(re.findall(r"\b(the|and|of)\b", t, re.I)) >= 0.03 * max(1, len(re.findall(r"\w+", t)))
+
+
 def run(f: dict) -> dict:
     try:
-        to_pdf(f)
+        if not english(to_pdf(f)):
+            return {"doc": f["doc"], "error": "not in English"}
         r = A.read(f["doc"])
         gt = truth(f)
     except Exception as e:  # noqa: BLE001
