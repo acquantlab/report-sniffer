@@ -186,11 +186,19 @@ year to date, and a quarter that nobody filed on its own (the fourth, a cash flo
 filed year-to-date figures. Earnings releases often print no balance sheet or cash flow statement; two 8-Ks of PG&E
 have no statements at all. McDonald's releases, whose text layer is glyph codes, are read with OCR (Q4 2022: 32 figures,
 none wrong). For the OCR measure every page is read as a picture (`FORCE_OCR=1`), at 144 dpi, without the PDF's
-text. Not measured yet: non-US reports in PDF.
+text.
+
+**European reports in PDF are not yet read as well.** `bench/esef.py` prints ESEF annual reports of European companies
+(filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
+the same report tags. First measure, on 35 reports from 13 countries: 305 of 476 figures right (64%). The causes:
+scales written as "DKKm" or "EUR thousand", amounts with spaces or dots between thousands ("197 034", decimal commas),
+statements laid out in other ways. This is being worked on; until then, check European figures against their page.
+(An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
 SNIFFER_SEC_UA="Your Name you@example.com" .venv/bin/python bench/accuracy.py 2019 2020   # or: latest, quarterly, APPLE_2022_10K
 FORCE_OCR=1 SNIFFER_SEC_UA="…" .venv/bin/python bench/accuracy.py quarterly PEPSICO_2023Q2_EARNINGS     # read as a scan
+.venv/bin/python bench/esef.py 3 2023-12-31     # European reports: 3 per country (needs Node with Playwright)
 ```
 
 ## Report
@@ -397,7 +405,8 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   a scan is read with OCR, which takes longer (1–3 s a page; a 200-page scan, several minutes) and can misread a blurred
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
-  equals the value filed with the SEC (see [Accuracy](#accuracy)); reports of European companies in PDF are not measured yet.
+  equals the value filed with the SEC (see [Accuracy](#accuracy)); reports of European companies in PDF are read
+  less well for now (64% of their figures right on a first sample).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).

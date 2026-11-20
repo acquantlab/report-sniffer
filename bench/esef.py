@@ -38,7 +38,7 @@ def _get(url: str, path: Path) -> bytes:
 
 
 def select(per: int, end: str) -> list[dict]:
-    out = []
+    out, every = [], set()
     for c in COUNTRIES:
         q = json.dumps([{"name": "period_end", "op": "eq", "val": end}, {"name": "country", "op": "eq", "val": c}])
         data = json.loads(_get(f"{API}/api/filings?filter={q}&page[size]=200", DIR / f"list-{c}-{end}.json"))["data"]
@@ -46,9 +46,10 @@ def select(per: int, end: str) -> list[dict]:
         for f in data:
             a = f["attributes"]
             lei = a["report_url"].split("/")[1] if a.get("report_url") else ""
-            if not a.get("json_url") or not re.search(r"-en\.x?html?$", a["report_url"] or "") or lei in seen:
-                continue
+            if not a.get("json_url") or not re.search(r"-en\.x?html?$", a["report_url"] or "") or lei in every:
+                continue                                   # English reports, one per company (a company files in one country)
             seen.add(lei)
+            every.add(lei)
             out.append({"doc": f"ESEF_{c}_{lei}_{end}", "report": API + a["report_url"], "json": API + a["json_url"], "end": end})
             if len(seen) >= per:
                 break
