@@ -711,7 +711,9 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
                                             r"( \(loss\))? per (common |ordinary )?share\b", _clean(label)):
             # the result per share under "Basic …" and then "Diluted earnings per share" headings, on the same label
             ps = [f for f in nums if is_per_share(f)]
-            n = len(ys) if len(ys) >= 2 else 0
+            # the columns: as many as the years over them ("2023 2022 | 2023 2022": a quarter and the year to date), or
+            # as many as the distinct years when the header names them twice ("2016, 2015, AND 2014  2016 2015 2014")
+            n = next((k for k in (len(ys), len(dict.fromkeys(ys))) if k >= 2 and len(ps) == 2 * k), 0) if len(ys) >= 2 else 0
             if n and len(ps) == 2 * n and re.search(r"basic.{0,600}?diluted", page_text.get(page, ""), re.I | re.S):
                 found.setdefault("eps_diluted", []).append((page, ps[n:], _clean(label) + " diluted (heading)", None))
             if key == "net_income" and ps and len(ps) == len(nums):

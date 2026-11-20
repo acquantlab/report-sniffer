@@ -24,7 +24,8 @@ elif sys.platform == "darwin":
     hidden += ["webview.platforms.cocoa"]
 else:
     hidden += ["webview.platforms.qt", "PyQt6.QtWebEngineWidgets", "PyQt6.QtWebEngineCore", "PyQt6.QtWebChannel"]
-for pkg in ("uvicorn", "curl_cffi", "pypdfium2", "pypdfium2_raw", "pptx", "reportlab", "anthropic"):
+# OCR: rapidocr with its models and settings, ONNX Runtime's native library, OpenCV (cv2 has its own hook)
+for pkg in ("uvicorn", "curl_cffi", "pypdfium2", "pypdfium2_raw", "pptx", "reportlab", "anthropic", "rapidocr", "onnxruntime", "omegaconf"):
     d, b, h = collect_all(pkg)
     datas += d
     binaries += b

@@ -292,10 +292,18 @@ def from_generic(data: bytes, name: str, url: Optional[str], meta: dict, progres
     is_pdf = data[:5] == b"%PDF-"
     progress(ui("Lettura delle pagine", "Reading the pages"), 0.3)
     if is_pdf:
-        g = generic.pdf_document(data, DOCS / meta["id"] / "img", f"/api/doc/{meta['id']}/img")
+        def on_ocr(k: int, n: int):
+            progress(ui("Riconoscimento ottico del testo (OCR): pagina {k} di {n}", "Optical character recognition (OCR): page {k} of {n}",
+                        k=k + 1, n=n), 0.3 + 0.5 * k / n)
+        g = generic.pdf_document(data, DOCS / meta["id"] / "img", f"/api/doc/{meta['id']}/img", on_ocr)
     else:
         g = generic.html_document(data, url)
     progress(ui("Preparo il report", "Preparing the report"), 0.85)
+    if not g["facts"] and g.get("garbled"):
+        raise sources.SourceError(ui("Il testo di questo PDF non è leggibile: i suoi caratteri non corrispondono a lettere e cifre "
+                                     "(serve una copia con testo vero, o il riconoscimento ottico). Nessuna cifra letta.",
+                                     "The text of this PDF cannot be read: its characters do not map to letters and digits (it needs "
+                                     "a copy with real text, or optical character recognition). No figure was read."))
     if not g["facts"]:
         raise sources.SourceError(ui("Non ho trovato cifre leggibili in questo documento (un PDF scansionato senza testo?).",
                                      "No readable figures in this document (a scanned PDF without text?)."))

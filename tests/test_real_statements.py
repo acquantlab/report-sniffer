@@ -335,3 +335,55 @@ def test_columns_by_their_dates_in_a_53_week_year(no_ai, tmp_path):
         ("Net income", "3,632", "634", "672")])
     m = _run(tmp_path, [ops])["fin"]["metrics"]
     assert m["revenue"]["cur"] == 26_487_000_000 and m["revenue"]["prev"] == 18_338_000_000
+
+
+def test_a_text_layer_that_is_not_text_gives_no_figures():
+    """McDonald's Q4 2022 release: fonts that map glyphs to other codes give "!0+"!\\x07b#$…" — no figure is made up
+    from it; a page of a real statement is text."""
+    junk = '!0+"!\x07b#$\x07"c 3\x07e0\'+3\' \x07&2_# \x07g0 b+,"\'# h\\ 1,wta!" w)# w_\'+0" *$\'1,$\'+a\x07$ !2$\'e 1h\'3 3\x07,e# g! 2 ' * 4
+    real = ("CONSOLIDATED STATEMENTS OF INCOME (In millions, except per share data) Revenues $ 23,183 $ 23,223 "
+            "Operating income 9,371 10,356 Net income 6,177 7,545 Earnings per share diluted 8.33 10.04 ") * 3
+    assert generic.garbled(junk) and not generic.garbled(real)
+
+
+def _scan(path: Path, pages: list[list[tuple]]) -> bytes:
+    """The same pages as pictures only, with no text layer: a scanned document."""
+    import pypdfium2 as pdfium
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+    src = pdfium.PdfDocument(_pdf(path.with_suffix(".src.pdf"), pages))
+    c = canvas.Canvas(str(path), pagesize=letter)
+    for i in range(len(src)):
+        c.drawImage(ImageReader(src[i].render(scale=2).to_pil().convert("L")), 0, 0, *letter)
+        c.showPage()
+    c.save()
+    return path.read_bytes()
+
+
+def test_a_scanned_statement_is_read_with_ocr(no_ai, tmp_path):
+    """A PDF that is a picture of its pages (a scan; or McDonald's release, whose text layer is glyph codes) is read with
+    optical character recognition: the same rows, amounts and columns as from text."""
+    pytest.importorskip("reportlab")
+    from analyst import ocr
+    if not ocr.available():
+        pytest.skip("OCR not installed")
+    ops = _page(["EXAMPLE FOODS CORPORATION", "CONSOLIDATED STATEMENT OF INCOME", "(In millions, except per share data)"],
+                ["2022", "2021"], [
+        ("Revenues",), ("Sales by company-operated restaurants", "$ 8,748.4", "$ 9,787.4"),
+        ("Revenues from franchised restaurants", "14,105.8", "13,085.3"), ("TOTAL REVENUES", "23,182.6", "23,222.9"),
+        ("OPERATING INCOME", "9,371.0", "10,356.0"), ("Interest expense", "1,207.0", "1,185.8"),
+        ("Income before provision for income taxes", "7,822.4", "9,446.3"), ("Provision for income taxes", "1,645.0", "1,900.9"),
+        ("NET INCOME", "$ 6,177.4", "$ 7,545.2"), ("EARNINGS PER SHARE-DILUTED", "$ 8.33", "$ 10.04"),
+        ("Weighted-average shares outstanding-diluted", "741.3", "751.8")])
+    cover = [(50, 740, "Example Foods Corporation", False), (50, 720, "Annual Report 2022", False),
+             (50, 700, "110 North Carpenter Street, Chicago, Illinois", False)]
+    data = _scan(tmp_path / "scan.pdf", [cover, ops])
+    assert generic.pdf_document(data, tmp_path / "img", "/x")["ocr"] == [1, 2]
+    a = pipeline.run({"kind": "upload", "data": data, "name": "scan.pdf", "lang": "en"}, lambda *_: None)
+    m = a["fin"]["metrics"]
+    assert m["revenue"]["cur"] == 23_182_600_000 and m["revenue"]["prev"] == 23_222_900_000
+    assert m["operating_income"]["cur"] == 9_371_000_000
+    assert m["pretax_income"]["cur"] == 7_822_400_000 and m["income_tax"]["cur"] == 1_645_000_000
+    assert m["net_income"]["cur"] == 6_177_400_000 and m["net_income"]["prev"] == 7_545_200_000
+    assert m["eps_diluted"]["cur"] == 8.33 and m["diluted_shares"]["cur"] == 741_300_000

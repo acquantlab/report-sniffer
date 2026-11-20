@@ -386,5 +386,7 @@
 "The downloaded file does not match the published one: update cancelled.": "下载的文件与发布的文件不一致：已取消更新。",
 "The new version does not start on this computer: update cancelled.": "新版本无法在此计算机上启动：已取消更新。",
 "Report Sniffer restarts": "Report Sniffer 正在重新启动",
-"An update is already running.": "已有更新正在进行。"
+"An update is already running.": "已有更新正在进行。",
+"The text of this PDF cannot be read: its characters do not map to letters and digits (it needs a copy with real text, or optical character recognition). No figure was read.": "无法读取此 PDF 的文本：其字符无法对应到字母和数字（需要带真实文本的副本，或进行光学字符识别）。未读取任何数字。",
+"Optical character recognition (OCR): page {k} of {n}": "光学字符识别（OCR）：第 {k} 页，共 {n} 页"
 }

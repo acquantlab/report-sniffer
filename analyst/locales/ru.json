@@ -386,5 +386,7 @@
 "The downloaded file does not match the published one: update cancelled.": "Загруженный файл не совпадает с опубликованным: обновление отменено.",
 "The new version does not start on this computer: update cancelled.": "Новая версия не запускается на этом компьютере: обновление отменено.",
 "Report Sniffer restarts": "Report Sniffer перезапускается",
-"An update is already running.": "Обновление уже выполняется."
+"An update is already running.": "Обновление уже выполняется.",
+"The text of this PDF cannot be read: its characters do not map to letters and digits (it needs a copy with real text, or optical character recognition). No figure was read.": "Текст этого PDF нельзя прочитать: его символы не соответствуют буквам и цифрам (нужна копия с настоящим текстом или оптическое распознавание). Ни одна цифра не прочитана.",
+"Optical character recognition (OCR): page {k} of {n}": "Оптическое распознавание текста (OCR): страница {k} из {n}"
 }

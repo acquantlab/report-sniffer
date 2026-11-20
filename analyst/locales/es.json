@@ -386,5 +386,7 @@
 "The downloaded file does not match the published one: update cancelled.": "El archivo descargado no coincide con el publicado: actualización cancelada.",
 "The new version does not start on this computer: update cancelled.": "La nueva versión no se inicia en este ordenador: actualización cancelada.",
 "Report Sniffer restarts": "Report Sniffer se reinicia",
-"An update is already running.": "Ya hay una actualización en curso."
+"An update is already running.": "Ya hay una actualización en curso.",
+"The text of this PDF cannot be read: its characters do not map to letters and digits (it needs a copy with real text, or optical character recognition). No figure was read.": "El texto de este PDF no se puede leer: sus caracteres no corresponden a letras y cifras (hace falta una copia con texto real, o reconocimiento óptico de caracteres). No se ha leído ninguna cifra.",
+"Optical character recognition (OCR): page {k} of {n}": "Reconocimiento óptico de caracteres (OCR): página {k} de {n}"
 }

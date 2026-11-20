@@ -386,5 +386,7 @@
 "The downloaded file does not match the published one: update cancelled.": "ダウンロードしたファイルが公開されたものと一致しません。更新を中止しました。",
 "The new version does not start on this computer: update cancelled.": "新しいバージョンがこのコンピューターで起動しません。更新を中止しました。",
 "Report Sniffer restarts": "Report Sniffer が再起動します",
-"An update is already running.": "更新はすでに実行中です。"
+"An update is already running.": "更新はすでに実行中です。",
+"The text of this PDF cannot be read: its characters do not map to letters and digits (it needs a copy with real text, or optical character recognition). No figure was read.": "この PDF のテキストは読み取れません。文字が英字や数字に対応していません（実際のテキストを含むコピー、または光学文字認識が必要です）。数値は読み取られていません。",
+"Optical character recognition (OCR): page {k} of {n}": "光学文字認識（OCR）：{n} ページ中 {k} ページ目"
 }
