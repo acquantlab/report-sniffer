@@ -45,7 +45,7 @@ financial instrument** and run locally (macOS, Windows, Linux) as a desktop app 
       (AMD gross profit: amortisation sits in between; Boeing operating costs); Air Liquide's exchange-rate line is
       an issuer concept with a French label, shown as an explained gap.
 - [x] Accuracy measured (`bench/accuracy.py`): 269 FinanceBench 10-K PDFs against the values filed with the SEC
-      (data.sec.gov companyfacts): all 11,692 figures read are right (v2.1.0: 93.8%), 99.1% of the main lines found;
+      (data.sec.gov companyfacts): all 11,783 figures read are right (v2.1.0: 93.8%), 99.8% of the main lines found;
       56 10-Qs and earnings releases (`quarterly`): all 1,905 right (v2.1.0: 97.5%), every main line of the 10-Qs found.
 - [x] A real AI provider: the Claude subscription through the Claude Code CLI read Netflix's 2022 10-K end to end
       (the README screenshots).

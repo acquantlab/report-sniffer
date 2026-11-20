@@ -1,92 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#262a31"/>
-      <stop offset="0.55" stop-color="#101318"/>
-      <stop offset="1" stop-color="#070708"/>
-    </linearGradient>
-    <radialGradient id="halo" cx="0.66" cy="0.40" r="0.55">
-      <stop offset="0" stop-color="#ff9f1a" stop-opacity="0.22"/>
-      <stop offset="1" stop-color="#ff9f1a" stop-opacity="0"/>
-    </radialGradient>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffd27a"/>
-      <stop offset="0.22" stop-color="#ffb02e"/>
-      <stop offset="0.62" stop-color="#f08a00"/>
-      <stop offset="1" stop-color="#9a4a00"/>
-    </linearGradient>
-    <linearGradient id="shine" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#fff6e0" stop-opacity="0.75"/>
-      <stop offset="1" stop-color="#fff6e0" stop-opacity="0"/>
-    </linearGradient>
-    <radialGradient id="mouth" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#000"/>
-      <stop offset="0.75" stop-color="#1a0e02"/>
-      <stop offset="1" stop-color="#3a1f00"/>
-    </radialGradient>
-    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#ffcf70" stop-opacity="0.85"/>
-      <stop offset="0.45" stop-color="#ff9f1a" stop-opacity="0.35"/>
-      <stop offset="1" stop-color="#ff9f1a" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity="0.45"/>
-    </filter>
-    <filter id="rollshadow" x="-30%" y="-60%" width="160%" height="220%">
-      <feDropShadow dx="0" dy="18" stdDeviation="14" flood-color="#000" flood-opacity="0.6"/>
-    </filter>
-    <clipPath id="bodyclip"><path d="M-300,-92 L250,-92 L250,92 L-300,92 A44 92 0 0 1 -300,-92 Z"/></clipPath>
-    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="186"/></clipPath>
-    <pattern id="grid" width="41.2" height="41.2" patternUnits="userSpaceOnUse" x="100" y="100">
-      <path d="M41.2 0H0V41.2" fill="none" stroke="#ffffff" stroke-opacity="0.045" stroke-width="2"/>
-    </pattern>
-  </defs>
-
-  <!-- the tile: a dark terminal screen -->
-  <g filter="url(#shadow)">
-    <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#bg)"/>
-  </g>
-  <g clip-path="url(#sq)">
-    <rect x="100" y="100" width="824" height="824" fill="url(#grid)"/>
-    <rect x="100" y="100" width="824" height="824" fill="url(#halo)"/>
-    <!-- a rising line of figures in the background: what the roll reads -->
-    <polyline points="150,770 290,700 400,735 520,600 640,640 790,470 900,420" fill="none" stroke="#ff9f1a" stroke-opacity="0.16" stroke-width="10" stroke-linejoin="round" stroke-linecap="round"/>
-  </g>
-  <rect x="101.5" y="101.5" width="821" height="821" rx="185" fill="none" stroke="#ffffff" stroke-opacity="0.07" stroke-width="3"/>
-
-  <!-- the rolled banknote, nose up and to the right -->
-  <g transform="translate(470 560) rotate(-24)">
-    <g filter="url(#rollshadow)">
-      <!-- body: a cylinder with a closed back end -->
-      <path d="M-300,-92 L250,-92 L250,92 L-300,92 A44 92 0 0 1 -300,-92 Z" fill="url(#body)"/>
-    </g>
-    <!-- the note printed on the roll -->
-    <g fill="none" stroke="#7a3a00" stroke-opacity="0.55" clip-path="url(#bodyclip)">
-      <rect x="-262" y="-62" width="470" height="124" rx="16" stroke-width="5"/>
-      <rect x="-246" y="-48" width="438" height="96" rx="10" stroke-width="2.5"/>
-      <circle cx="-150" cy="0" r="30" stroke-width="4"/>
-      <circle cx="96" cy="0" r="30" stroke-width="4"/>
-    </g>
-    <text x="-27" y="31" font-family="DejaVu Sans, Arial, sans-serif" font-weight="700" font-size="92" fill="#5a2a00" fill-opacity="0.8" text-anchor="middle">$</text>
-    <!-- shine along the top of the cylinder -->
-    <rect x="-350" y="-80" width="600" height="30" fill="url(#shine)" clip-path="url(#bodyclip)"/>
-    <!-- the open end: the paper rolled up inside -->
-    <ellipse cx="250" cy="0" rx="46" ry="92" fill="url(#mouth)"/>
-    <g fill="none" stroke="#ffb02e" stroke-linecap="round">
-      <path d="M250,-64 A30 64 0 1 1 234,52" stroke-width="7" stroke-opacity="0.9"/>
-      <path d="M250,-36 A17 36 0 1 0 262,30" stroke-width="6" stroke-opacity="0.7"/>
-    </g>
-    <ellipse cx="250" cy="0" rx="46" ry="92" fill="none" stroke="#ffd27a" stroke-width="9"/>
-    <!-- it sniffs: a glow at the nose and figures flowing in -->
-    <ellipse cx="300" cy="0" rx="120" ry="135" fill="url(#glow)"/>
-    <g fill="#ffc04d">
-      <rect x="318" y="-14" width="26" height="26" rx="5" opacity="0.95"/>
-      <rect x="366" y="-30" width="22" height="22" rx="4" opacity="0.8"/>
-      <rect x="364" y="22" width="18" height="18" rx="4" opacity="0.7"/>
-      <rect x="408" y="-6" width="18" height="18" rx="4" opacity="0.6"/>
-      <rect x="440" y="-40" width="14" height="14" rx="3" opacity="0.45"/>
-      <rect x="452" y="26" width="12" height="12" rx="3" opacity="0.35"/>
-      <rect x="486" y="-10" width="10" height="10" rx="2" opacity="0.25"/>
-    </g>
-  </g>
+  <!-- Report Sniffer: a statement (its title, three rows of label and figure) and the rolled banknote of the app
+       reading the figure it has highlighted in amber. Flat, in the app's colours (black, amber #ff9f1a).
+       Rendered to icon.png (1024 px, transparent outside the tile) and icon.ico (Windows) -->
+<defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#17191d"/><stop offset="1" stop-color="#0a0b0d"/></linearGradient></defs>
+<rect x="100" y="100" width="824" height="824" rx="184" fill="url(#tile)"/>
+<rect x="101.5" y="101.5" width="821" height="821" rx="182.5" fill="none" stroke="#ffffff" stroke-opacity="0.11" stroke-width="3"/>
+<g transform="translate(-34 -46)">
+<line x1="262" y1="474" x2="392" y2="474" stroke="#4a515b" stroke-width="36" stroke-linecap="round"/><g stroke-linecap="round" stroke-width="36">
+<line x1="262" y1="604" x2="452" y2="604" stroke="#30353d"/>
+<line x1="566" y1="604" x2="742" y2="604" stroke="#ff9f1a"/>
+<line x1="262" y1="694" x2="414" y2="694" stroke="#30353d"/>
+<line x1="604" y1="694" x2="742" y2="694" stroke="#30353d"/>
+<line x1="262" y1="784" x2="478" y2="784" stroke="#30353d"/>
+<line x1="642" y1="784" x2="742" y2="784" stroke="#30353d"/>
+</g><g transform="translate(672 556) rotate(-47)">
+  <rect x="0" y="-50" width="236" height="100" fill="#ffb13b"/>
+  <rect x="0" y="0" width="236" height="50" fill="#e9890b"/>
+  <rect x="189" y="-50" width="11" height="100" fill="#000" opacity="0.13"/>
+  <line x1="0" y1="-19" x2="236" y2="-19" stroke="#ffd690" stroke-width="3.5" opacity="0.55"/>
+  <ellipse cx="236" cy="0" rx="13.0" ry="50" fill="#e9890b"/>
+  <ellipse cx="0" cy="0" rx="13.0" ry="50" fill="#ffc761"/>
+  <ellipse cx="0" cy="0" rx="8.1" ry="33.0" fill="#130c03"/>
+  <path d="M-3.9,-16.0 A4.7 18.0 0 1 0 4.2,5.0" fill="none" stroke="#ffb13b" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+</g>
+</g>
 </svg>
