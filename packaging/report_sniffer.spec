@@ -33,6 +33,8 @@ for pkg in ("uvicorn", "curl_cffi", "pypdfium2", "pypdfium2_raw", "pptx", "repor
 
 a = Analysis([str(ROOT / "app.py")], pathex=[str(ROOT)], datas=datas, binaries=binaries, hiddenimports=hidden,
              excludes=["tkinter", "pytest", "PyQt5", "PySide2", "PySide6", "gi"])
+# OpenCV's video plugin (ffmpeg, about 28 MB on Windows) is loaded only to read videos: OCR does not need it
+a.binaries = [x for x in a.binaries if "opencv_videoio_ffmpeg" not in x[0]]
 if sys.platform.startswith("linux"):
     # the window needs Qt WebEngine and Qt Widgets only: no QML, 3D, multimedia or control styles, and only
     # Chromium's own locale files among the translations (about 60% of the size of Qt)

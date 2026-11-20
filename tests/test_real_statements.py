@@ -387,3 +387,23 @@ def test_a_scanned_statement_is_read_with_ocr(no_ai, tmp_path):
     assert m["pretax_income"]["cur"] == 7_822_400_000 and m["income_tax"]["cur"] == 1_645_000_000
     assert m["net_income"]["cur"] == 6_177_400_000 and m["net_income"]["prev"] == 7_545_200_000
     assert m["eps_diluted"]["cur"] == 8.33 and m["diluted_shares"]["cur"] == 741_300_000
+
+
+def test_the_scales_european_reports_print():
+    """ESEF reports printed to PDF (bench/esef.py): d'Amico heads its statements "US$ Thousand"; others "EUR '000",
+    "TEUR", "kSEK", "€m", "SEKm", "MEUR", "DKK million"; a figure in a sentence is not a scale."""
+    for text, k in [("CONSOLIDATED INCOME STATEMENT US$ Thousand Note 2023 2022", 1e3), ("EUR '000 2023 2022", 1e3),
+                    ("(€000)", 1e3), ("in TEUR", 1e3), ("kSEK", 1e3), ("Amounts in EUR 1,000", 1e3), ("Thousand euros", 1e3),
+                    ("€m 2023 2022", 1e6), ("SEKm", 1e6), ("MEUR", 1e6), ("DKK million", 1e6), ("EUR m", 1e6),
+                    ("(In millions, except per share data)", 1e6), ("Revenue 538,954 Note 3", 1.0), ("Amounts in EUR", 1.0),
+                    ("a fee of EUR 1,000 per share", 1.0)]:
+        assert S.page_scale(text) == k, text
+
+
+def test_the_dollar_sign_as_ocr_reads_it():
+    """PepsiCo's release read with OCR: "S" and "§" for "$", and "2,748S" — the amount with the next column's dollar
+    sign glued to it, which is no number; a letter S in a label stays."""
+    from analyst.ocr import dollars
+    words = [{"t": t, "w": 10.0} for t in ["PepsiCo", "S", "2,748S", "1,429", "§", "4,680", "S1,234", "Class", "S", "shares", "(32)S"]]
+    assert [w["t"] for w in dollars(words)] == ["PepsiCo", "$", "2,748", "1,429", "$", "4,680", "$1,234", "Class", "S", "shares", "(32)"]
+    assert words[2]["w"] < 10

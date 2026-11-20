@@ -51,4 +51,19 @@ def read(image, scale: float = SCALE) -> list[dict]:
         for m in re.finditer(r"\S+", text):
             words.append({"t": m.group(), "x": x0 + m.start() * cw, "y": y0, "w": max((m.end() - m.start()) * cw, 1),
                           "h": max(y1 - y0, 4)})
+    return dollars(words)
+
+
+def dollars(words: list[dict]) -> list[dict]:
+    """The dollar sign as the models read it: "S" or "§" ("S 2,748", "§ 1,429"), or glued to the amount before it
+    ("2,748S", PepsiCo), which would no longer be a number."""
+    nums = {i for i, w in enumerate(words) if re.match(r"[$S§]?\(?\d", w["t"])}
+    for i, w in enumerate(words):
+        t = re.sub(r"(?<=[\d)])[S§$]$", "", w["t"])
+        if len(t) < len(w["t"]):
+            w["w"] *= len(t) / len(w["t"])                 # the amount ends where its digits do
+        t = re.sub(r"^[S§](?=\(?\d)", "$", t)
+        if t in ("S", "§") and i + 1 in nums:
+            t = "$"
+        w["t"] = t.replace("§", "$")
     return words
