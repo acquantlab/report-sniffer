@@ -203,6 +203,10 @@ def read(doc: str):
     from analyst import generic, i18n, pipeline
     data = get(RAW.format(doc), CACHE / f"{doc}.pdf")
     t0 = time.time()
+    if os.environ.get("FORCE_OCR"):
+        # every page read with OCR, as if the PDF were a scan: how well the app reads scanned documents
+        generic.needs_ocr = lambda *a: True
+        generic.MAX_OCR_PAGES = 10 ** 6
     with tempfile.TemporaryDirectory() as tmp, i18n.using("en"):
         g = generic.pdf_document(data, Path(tmp), "/x")
         fin = g.get("fin") or {}
@@ -227,8 +231,23 @@ def read(doc: str):
                 ends.append(datetime.strptime(f"{mo[:3].title()} {dd} {yy}", "%b %d %Y").date())
             except ValueError:
                 pass
+    # the lines the document prints at all: a row label anywhere in it, followed by an amount
+    from analyst import statements
+    # on a page of the group's own statement of that kind (not a guarantor's or the parent company's)
+    printed = set()
+    for t in g["all_text"]:
+        kinds = statements.page_kinds(t)
+        if not kinds or re.search(statements.NOT_PRIMARY, t[:700], re.I):
+            continue
+        for line in t.splitlines():
+            label = re.split(r"\s[(\$—–-]*\d", line, maxsplit=1)[0]
+            # not a guarantor table's row (parent, guarantors, others, eliminations, total: five columns or more)
+            if label != line and len(re.findall(r"\(?\d[\d,]*\)?", line[len(label):])) <= 4:
+                k = statements.match(label)
+                if k and statements.statement_of(k) in kinds:
+                    printed.add(k)
     return {"metrics": m, "pages": [p["n"] for p in g["pages"]], "periods": x.get("periods"), "secs": round(time.time() - t0, 1),
-            "total_pages": g["total_pages"], "cover": cover, "ends": ends}
+            "total_pages": g["total_pages"], "cover": cover, "ends": ends, "printed": sorted(printed), "ocr": g.get("ocr", [])}
 
 
 def months_of(label: str) -> Optional[int]:
@@ -257,7 +276,8 @@ def truth_q(cik: int, end: date, months: int, F) -> dict:
     own = max(at_end, key=lambda a: at_end[a])
     out = {"_accn": own, "_end": str(end)}
     for key, spec in F.METRICS.items():
-        cs = [c for c in concepts(F, key) if c != "InterestPaidNet"]
+        # interest paid in cash is not the expense; the pre-tax income earned at home is not the group's
+        cs = [c for c in concepts(F, key) if c not in ("InterestPaidNet", "IncomeLossFromContinuingOperationsBeforeIncomeTaxesDomestic")]
         vals = {"own": {"cur": defaultdict(list), "prev": defaultdict(list)}, "alt": {"cur": defaultdict(list), "prev": defaultdict(list)}}
         for c, u, r in rows:
             if c not in cs:
@@ -378,9 +398,10 @@ def run_doc(args):
             if st == "none" and not cands:
                 continue
             if st == "none":
-                st = "missed"
+                # a line the document does not print (MGM has no "Total liabilities" row): not one it missed
+                st = "missed" if key in r["printed"] else "absent"
             res.append({"key": key, "w": w, "status": st, "app": o, "gt": cands, "alt": alt})
-    return {"doc": doc, "company": company, "fy": fy, "pages": r["pages"], "total_pages": r["total_pages"], "secs": r["secs"],
+    return {"doc": doc, "company": company, "fy": fy, "pages": r["pages"], "total_pages": r["total_pages"], "secs": r["secs"], "ocr": r["ocr"],
             "periods": r["periods"], "cover": str(r["cover"]), "gt_end": gt.get("_end"), "accn": gt.get("_accn"), "res": res}
 
 
@@ -388,9 +409,9 @@ def main():
     meta_file = CACHE / "financebench_document_information.jsonl"
     docs = [json.loads(line) for line in get(FB + "data/financebench_document_information.jsonl", meta_file).decode().splitlines() if line]
     sel = sys.argv[1:]
-    quarterly = sel == ["quarterly"]
-    if quarterly:
-        sel = sorted(d["doc_name"] for d in docs if d["doc_type"] in ("10q", "Earnings"))
+    quarterly = sel[:1] == ["quarterly"]
+    if quarterly:            # "quarterly" alone: every 10-Q and earnings release; or "quarterly DOC ..."
+        sel = sel[1:] or sorted(d["doc_name"] for d in docs if d["doc_type"] in ("10q", "Earnings"))
     if not sel or sel == ["latest"]:
         last = {}
         for d in docs:
@@ -425,6 +446,7 @@ def report(out):
     core_tot = Counter(x["status"] for d in out if "res" in d for x in d["res"] if x["key"] in CORE)
     print(f"CORE ok {core_tot['ok']} wrong {core_tot['wrong']} missed {core_tot['missed']} -> core recall "
           f"{core_tot['ok'] / max(1, core_tot['ok'] + core_tot['wrong'] + core_tot['missed']):.4f}")
+    print(f"absent from the documents (not printed): {tot['absent']}")
     print(f"\nTOTAL ok {tot['ok']} wrong {tot['wrong']} explained {tot['explained']} unverified {tot['unverified']} -> precision {tot['ok'] / max(1, n):.4f}; nogt {tot['nogt']}; "
           f"missed {tot['missed']} -> recall {tot['ok'] / max(1, tot['ok'] + tot['wrong'] + tot['missed']):.4f}")
 

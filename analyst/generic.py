@@ -39,6 +39,7 @@ INLINE_NUM = re.compile(r"(?<![\w.,])[(\-−–+]?(?:[€$£¥]\s?)?\d{1,3}(?:[.
 MONTH_END = re.compile(r"(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
                        r"|gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\.?\s*$", re.I)
 MAX_PAGES_SHOWN = 8
+MAX_OCR_PAGES = 400             # pages read with OCR (about 1-2 s each)
 MAX_FACTS_PAGE = 400
 
 
@@ -89,6 +90,21 @@ def ligatures(text: str) -> str:
     return re.sub(r"(?<=\w)[\ufffe\ufffd](?=\w)|[\ufffe\ufffd](?=[a-z])", "fi", text)
 
 
+def garbled(text: str) -> bool:
+    """A text layer that is not text: fonts that map their glyphs to other codes give symbols and control characters
+    ("!0+"!\x07b#$\x07"c 3\x07e0'+3'"), with few letters and fewer vowels. On 358 real PDFs a page of text has at
+    least 77% letters and 37% vowels among them; such a page (McDonald's) 24% and 12%."""
+    s = re.sub(r"\s", "", text)
+    if len(s) < 200:
+        return False
+    ctrl = sum(1 for c in s if ord(c) < 32)
+    letters = sum(c.isalpha() for c in s)
+    words = re.findall(r"[A-Za-z]{2,}", text)
+    total = sum(len(w) for w in words)
+    vowels = sum(1 for w in words for c in w.lower() if c in "aeiou") / total if total else 0
+    return ctrl > 0.05 * len(s) or (letters < 0.5 * len(s) and vowels < 0.25)
+
+
 def unsplit(text: str) -> str:
     """Statement words the PDF spaces apart ("Consolidated Balance Shee t", "Statements of Comp rehensive Income")."""
     return _SPLIT.sub(lambda m: m.group().replace(" ", ""), text) if " " in text else text
@@ -123,9 +139,39 @@ def score_label(label: str) -> int:
 
 # ---------------------------------------------------------------- PDF
 
-def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
-    """PDF -> page images + transparent word layer (so the sniffer can find the words)."""
+def _image_page(page, size) -> bool:
+    """A page that is mostly a picture: a scan, or a table pasted as an image."""
+    import pypdfium2.raw as pdfium_c
+
+    area = 0.0
+    try:
+        for obj in page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], max_depth=3):
+            l, b, r, t = (obj.get_bounds if hasattr(obj, "get_bounds") else obj.get_pos)()     # pypdfium2 5 / 4
+            area += max(0.0, r - l) * max(0.0, t - b)
+    except Exception:          # an object the library cannot measure: the page keeps its own text
+        return False
+    return area >= 0.25 * size[0] * size[1]
+
+
+def needs_ocr(pdf, i: int, text: str, size) -> bool:
+    """A page without real text: a text layer of glyph codes, or a picture of the page with (almost) no text."""
+    if garbled(text):
+        return True
+    if len(re.sub(r"\s", "", text)) >= 200:
+        return False
+    page = pdf[i]
+    try:
+        return _image_page(page, size)
+    finally:
+        page.close()
+
+
+def pdf_document(data: bytes, img_dir: Path, img_url: str, on_ocr=None) -> dict:
+    """PDF -> page images + transparent word layer (so the sniffer can find the words).
+    Pages without real text (scans, glyph codes) are read with OCR; on_ocr(done, total) follows it."""
     import pypdfium2 as pdfium
+
+    from . import ocr
 
     pdf = pdfium.PdfDocument(data)
     n = len(pdf)
@@ -141,9 +187,28 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
         texts.append(unsplit(ligatures(re.sub(r"(?<!\r)\n|\xa0", " ", tp.get_text_range() or ""))))
         tp.close()
         page.close()
-    chosen = best_pages(texts)
+    # pages without real text: a text layer of glyph codes, or a picture of the page with (almost) no text. They are read
+    # with OCR; those it cannot read (OCR missing) give no figures, which would be made up of glyph codes
+    need = [i for i, txt in enumerate(texts) if needs_ocr(pdf, i, txt, sizes[i])]
+    ocr_words = {}
+    if need and ocr.available():
+        need = need[:MAX_OCR_PAGES]
+        for k, i in enumerate(need):
+            if on_ocr:
+                on_ocr(k, len(need))
+            page = pdf[i]
+            words = ocr.read(page.render(scale=ocr.SCALE).to_pil(), ocr.SCALE)
+            page.close()
+            if words:
+                ocr_words[i] = words
+                texts[i] = unsplit("\r\n".join(" ".join(wd["t"] for wd in ln) for ln in _lines(words)))
+    bad = {i for i, t in enumerate(texts) if garbled(t)}
+    chosen = [i for i in best_pages([("" if i in bad else t) for i, t in enumerate(texts)]) if i not in bad] or best_pages(texts)[:1]
     pages_words = {}
     for i in chosen:
+        if i in ocr_words:
+            pages_words[i] = ocr_words[i]
+            continue
         page = pdf[i]
         tp = page.get_textpage()
         pages_words[i] = _words(tp, sizes[i][1])
@@ -158,7 +223,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
         bmp = pdf[i].render(scale=2.0)
         bmp.to_pil().convert("RGB").save(img_dir / f"p{i + 1}.jpg", quality=88)   # JPEG: ~50x faster than PNG
         words = pages_words[i]
-        figs = {id(f["word"]): f for f in _label_figures(words)}
+        figs = {} if i in bad else {id(f["word"]): f for f in _label_figures(words)}
         keep = sorted(figs.values(), key=lambda f: -f["score"])[:MAX_FACTS_PAGE]
         keep_ids = {id(f["word"]) for f in keep}
         hsize = median([wd["h"] for wd in words]) if words else 10
@@ -194,7 +259,8 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str) -> dict:
     title = cover_name(texts[:3]) or meta or company_line(texts[:2])
     pdf.close()
     return {"pages": out_pages, "facts": facts, "headings": headings, "page_text": page_text, "all_text": texts,
-            "total_pages": n, "title": title, "css": PDF_CSS}
+            "total_pages": n, "title": title, "css": PDF_CSS, "ocr": sorted(i + 1 for i in ocr_words),
+            "garbled": len(bad) >= max(1, len([t for t in texts if t.strip()]) // 2)}
 
 
 def cover_name(texts: list[str]) -> str:

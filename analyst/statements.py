@@ -63,7 +63,8 @@ PATTERNS: dict[str, list[str]] = {
     "total_assets": [r"total assets", r"totale (attivo|attivit[aà])"],
     "current_liabilities": [r"total current liabilities", r"(totale )?passivit[aà] correnti"],
     "total_liabilities": [r"total liabilities", r"totale passivit[aà]"],
-    "liab_and_equity": [r"total liabilities(,| and) .*(equity|deficit|investment)", r"totale passivit[aà] e patrimonio netto"],
+    "liab_and_equity": [r"total liabilities(,| and) .*(equity|deficit|investment)", r"totale passivit[aà] e patrimonio netto",
+                        r"total ((share|stock)holders'? |owners'? )?equity and liabilities", r"totale patrimonio netto e passivit[aà]"],
     "temp_equity": [r"(total )?redeemable (convertible )?(preferred|preference) (stock|shares)(,.*)?", r"(total )?(temporary|mezzanine) equity"],
     "equity": [r"total (?!.*liabilit)[\w .,&'’-]*?(stockholders|shareholders|share-holders|shareowners)['’]? (equity|deficit|investment|equity \(deficit\)|\(deficit\) equity)",
                r"total equity( \(deficit\))?", r"total deficit", r"(totale )?patrimonio netto( totale)?",
@@ -129,12 +130,25 @@ def match(label: str) -> Optional[str]:
     return None
 
 
+# the compact forms of European reports, with the currency: "US$ Thousand", "EUR '000", "€000", "TEUR", "kSEK", "€m",
+# "SEKm", "MEUR", "DKK million", "thousands of euros", "in EUR 1,000"; the first one on the page counts
+_CUR = r"(?:us\$|u\.s\.\$|\$|€|£|eur|euros?|usd|sek|dkk|nok|chf|gbp|pln|isk|huf|czk|ron|bgn)"
+_CODE = r"(?:eur|€|sek|nok|dkk|usd|chf|pln|gbp)"
+SCALES_EU = [
+    (rf"(?<![\w.]){_CUR} ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
+    (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}", 1e6),
+    (rf"(?<![\w.]){_CUR} ?(?:thousands?|['’]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
+     rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)", 1e3),
+]
+
+
 def page_scale(text: str) -> float:
     t = text.lower()
     for pat, k in SCALES:
         if re.search(pat, t):
             return k
-    return 1.0
+    hits = [(m.start(), k) for pat, k in SCALES_EU for m in [re.search(pat, t)] if m]
+    return min(hits)[1] if hits else 1.0
 
 
 def page_currency(text: str) -> str:
@@ -428,7 +442,7 @@ def _headings(text: str):
 
 # statements that are not the group's own: the parent company alone, guarantor / consolidating columns
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
-               r"|bilancio separato|consolidating|guarantor|non-guarantor|\bissuer\b")
+               r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b")
 
 
 BOILERPLATE = re.compile(r"(the |see )?(accompanying )?notes to (the )?(consolidated )?financial statements are an integral part of (these|this)"
@@ -517,15 +531,22 @@ def statement_pages(texts: list[str]) -> list[int]:
     return sorted(pages | set(nxt.values()))
 
 
-def _is_note_ref(f: dict) -> bool:
-    """A note number ("4") or a footnote mark the PDF prints apart from the label ("(2)")."""
-    return bool(re.fullmatch(r"\d{1,2}|\(\d\)", f["display"].strip()))
+def _is_note_ref(f: dict, note_col: bool = False) -> bool:
+    """A note number ("4") or a footnote mark the PDF prints apart from the label ("(2)"); under a "Note" column
+    header, a note in parentheses too ("(16)", European reports) — elsewhere that is an amount (Pfizer's tax "(71)")."""
+    return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)" if note_col else ""), f["display"].strip()))
 
 
-def _drop_note_ref(nums: list, years: list) -> list:
+def note_column(text: str) -> bool:
+    """A page whose column header, above its first amount, names a "Note" column."""
+    first = re.search(r"\d,\d{3}", text)
+    return bool(re.search(r"\bnotes?\b", text[:first.start() if first else 600][-300:], re.I))
+
+
+def _drop_note_ref(nums: list, years: list, note_col: bool = False) -> list:
     """A "Note" column before the amounts ("Net sales  4  12,450  11,200"): a small whole number in front of
     more figures than the page has year columns. A two-digit amount in its own column stays."""
-    if len(nums) >= 2 and _is_note_ref(nums[0]):
+    if len(nums) >= 2 and _is_note_ref(nums[0], note_col):
         cols = len(years) if len(years) >= 2 else 2
         if len(nums) > cols and len(nums) % cols:      # not a row printed twice ("$ 46 $ 303 $ 1,203" and again)
             return nums[1:]
@@ -606,7 +627,10 @@ def page_columns(facts: list[dict]) -> list[float]:
     def percent(g):
         one = sum(1 for f in g if re.fullmatch(r"\(?-?\d{1,3}\.\d\)?%?", f["display"].strip("$ ")))
         return one >= 0.8 * len(g)
-    return [_right(sorted(g, key=_right)[len(g) // 2]) for g in groups if len(g) >= 3 and not percent(g)]
+
+    def notes(g):                                  # a "Note" column: "(12)", "(16)" (European reports)
+        return all(re.fullmatch(r"\(\d{1,2}\)", f["display"].strip()) for f in g)
+    return [_right(sorted(g, key=_right)[len(g) // 2]) for g in groups if len(g) >= 3 and not percent(g) and not notes(g)]
 
 
 def by_position(nums: list, cols: list[float], n: int) -> Optional[list]:
@@ -702,6 +726,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     for f in facts:
         groups.setdefault((f["page"], f["label"]), []).append(f)
     cols = {p: page_columns([f for f in facts if f["page"] == p]) for p in page_text}
+    note_col = {p: note_column(t) for p, t in page_text.items()}
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
@@ -711,14 +736,16 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
                                             r"( \(loss\))? per (common |ordinary )?share\b", _clean(label)):
             # the result per share under "Basic …" and then "Diluted earnings per share" headings, on the same label
             ps = [f for f in nums if is_per_share(f)]
-            n = len(ys) if len(ys) >= 2 else 0
+            # the columns: as many as the years over them ("2023 2022 | 2023 2022": a quarter and the year to date), or
+            # as many as the distinct years when the header names them twice ("2016, 2015, AND 2014  2016 2015 2014")
+            n = next((k for k in (len(ys), len(dict.fromkeys(ys))) if k >= 2 and len(ps) == 2 * k), 0) if len(ys) >= 2 else 0
             if n and len(ps) == 2 * n and re.search(r"basic.{0,600}?diluted", page_text.get(page, ""), re.I | re.S):
                 found.setdefault("eps_diluted", []).append((page, ps[n:], _clean(label) + " diluted (heading)", None))
             if key == "net_income" and ps and len(ps) == len(nums):
                 continue                                   # only per-share figures: not the amount
         if not key:
             continue
-        nums = _amounts(_drop_note_ref(nums, ys), key)
+        nums = _amounts(_drop_note_ref(nums, ys, note_col.get(page, False)), key)
         if key == "eps_diluted" and _clean(label) == "diluted" and not any(re.search(r"\d[.,]\d\d$", f["display"].strip("()$ ")) for f in nums):
             continue                                       # a bare "Diluted" row of share counts, not earnings per share
         if not nums:
@@ -781,6 +808,10 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             # with the consolidated statement at hand, its lines from it only: not a figure elsewhere (a segment's, a
             # quarter's, the MD&A's), the parent company's or the guarantors' statements, the statement of equity
             cands = [c for c in cands if statement_of(key) in kinds[c[0]] and titled.get(c[0], 0) >= 2]
+            # with the group's consolidated statement at hand, not one titled without "consolidated": the parent
+            # company's own statements, which European reports print after the group's ("Statement of Financial Position")
+            if any(statement_of(key) in kinds[p] and titled[p] == 3 for p in page_text):
+                cands = [c for c in cands if titled[c[0]] == 3]
             if any(year_of[p] >= top_year and statement_of(key) in kinds[p] and titled[p] >= 2 for p in page_text):
                 cands = [c for c in cands if not 0 < year_of[c[0]] < top_year]  # not an investee's older statements
                 if not cands:

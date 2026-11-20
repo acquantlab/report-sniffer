@@ -60,6 +60,12 @@ def selftest():
     short = [code for code in i18n.LANGS if code not in ("it", "en") and len(i18n.catalog(code)) < 300]
     if short:
         raise SystemExit("translations missing: %s" % ", ".join(short))
+    from PIL import Image, ImageDraw
+    from analyst import ocr                                # optical character recognition: models and native libraries
+    im = Image.new("RGB", (420, 80), "white")
+    ImageDraw.Draw(im).text((10, 20), "Total revenues 1,234.5", fill="black", font_size=28)
+    if "1,234.5" not in [w["t"] for w in ocr.read(im, 1.0)]:
+        raise SystemExit("optical character recognition does not work")
     print("selftest ok")
     return 0
 

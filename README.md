@@ -140,6 +140,10 @@ In untagged PDF/HTML the figures are the ones printed on the page:
   empty: no shift of the years); a total printed without a label closes its section ("Total assets"); EPS
   under "Basic" / "Diluted" headings, tax lines whose wording gives their sign ("Benefit from (provision for) income
   taxes") and titles that the PDF prints with broken words ("Balance Shee t") are read too.
+- **Scans and unreadable text**: a page without real text — a scan, a table pasted as a picture, or a PDF whose
+  fonts map their letters to other codes (McDonald's earnings releases: "!0+"!b#$") — is read with optical character
+  recognition: [RapidOCR](https://github.com/RapidAI/RapidOCR) with the PP-OCR models, on your computer and offline,
+  about 1–3 seconds a page. Its words get their place on the page, so the figures are read and highlighted as in any PDF.
 - **Banks and insurers**: net interest and other banking income, total net revenue, insurance revenue (IFRS 17) count
   as revenue; free cash flow is not computed for them (capex means little for a bank's cash flow statement).
 - **ESEF reports** laid out with page containers (`pf`, `page…` classes, nested) or with no pages at all (the text
@@ -155,31 +159,46 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.2 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.3 |
 |---|---|---|
-| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,783 of 11,783) |
-| Main lines found (16 lines × 2 years) | 78.8% | **99.8%** |
+| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,787 of 11,787) |
+| Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.2 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.3 |
 |---|---|---|
-| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,905 of 1,905) |
-| Main lines of the 10-Qs found | 82.2% | **100%** |
+| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,937 of 1,937) |
+| Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
+
+| Scanned documents: the 29 earnings releases read **only with OCR**, as if they were scans | v2.2.3 |
+|---|---|
+| Figures read that equal the filed value | **100%** (819 of 819: the same figures as from their text) |
+| Main lines found, of those the statements print | **100%** (567 of 567) |
 
 The rules were first fixed on the 40 latest reports; on the other years, which they had not seen, they then read
 96.6% (2019) and 98.4% (2015–2021) right, and what was still wrong there was fixed in turn. So 100% means "no
-error left on these 269 reports", not "no error possible": another layout can still leave a line unread (0.2% of the
-main lines here, mostly lines a statement does not print) or, rarely, read one from the wrong place. The page of every
-figure is shown, so it can be checked. Inline XBRL filings need no such measure: their figures are the tags
-themselves.
+error left on these documents", not "no error possible": another layout can still leave a line unread or, rarely,
+read one from the wrong place. Lines a statement does not print (MGM has no "Total liabilities" row) are not counted
+as missed. The page of every figure is shown, so it can be checked. Inline XBRL filings need no such measure: their
+figures are the tags themselves.
 
 Quarterly figures are compared with the 10-Q (or, for a fourth quarter, the 10-K) of the same period: the quarter, the
 year to date, and a quarter that nobody filed on its own (the fourth, a cash flow quarter) as the difference of two
-filed year-to-date figures. Earnings releases often print no balance sheet or cash flow statement, so their lines are
-counted as found only for the 10-Qs; three releases are not read (one whose PDF has no usable text, two 8-Ks
-without statements). Not measured yet: non-US reports in PDF.
+filed year-to-date figures. Earnings releases often print no balance sheet or cash flow statement; two 8-Ks of PG&E
+have no statements at all. McDonald's releases, whose text layer is glyph codes, are read with OCR (Q4 2022: 32 figures,
+none wrong). For the OCR measure every page is read as a picture (`FORCE_OCR=1`), at 144 dpi, without the PDF's
+text.
+
+**European reports in PDF are not yet read as well.** `bench/esef.py` prints ESEF annual reports of European companies
+(filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
+the same report tags. First measure, on 35 reports from 13 countries: 305 of 476 figures right (64%). The causes:
+scales written as "DKKm" or "EUR thousand", amounts with spaces or dots between thousands ("197 034", decimal commas),
+statements laid out in other ways. This is being worked on; until then, check European figures against their page.
+(An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
 SNIFFER_SEC_UA="Your Name you@example.com" .venv/bin/python bench/accuracy.py 2019 2020   # or: latest, quarterly, APPLE_2022_10K
+FORCE_OCR=1 SNIFFER_SEC_UA="…" .venv/bin/python bench/accuracy.py quarterly PEPSICO_2023Q2_EARNINGS     # read as a scan
+.venv/bin/python bench/esef.py 3 2023-12-31     # European reports: 3 per country (needs Node with Playwright)
 ```
 
 ## Report
@@ -382,10 +401,12 @@ notes are sent to the provider you chose (or to its command-line tool), under th
 - Financial figures depend on the issuer's tags: rare or custom concepts may be missing (the card shows "—").
 - Documents up to 400 MB (a large ESEF report such as Enel's is 130 MB and takes about 10 s and 700 MB of memory).
   filings.xbrl.org and SEC EDGAR answer "busy" (HTTP 429/503) at times: the app waits and retries three times.
-- Untagged PDFs are read from their layout: a statement printed as an image (a scan) has no text to read, and an
-  unusual layout can leave a line unread or take it from another table; the page of every figure is shown so it can
-  be checked. On 269 real 10-K PDFs every figure read equals the value filed with the SEC (see
-  [Accuracy](#accuracy)); quarterly reports, earnings releases and ESEF reports were checked by hand, not measured.
+- Untagged PDFs are read from their layout: an unusual layout can leave a line unread or take it from another table;
+  a scan is read with OCR, which takes longer (1–3 s a page; a 200-page scan, several minutes) and can misread a blurred
+  or skewed page; the page of every figure is shown so it can
+  be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
+  equals the value filed with the SEC (see [Accuracy](#accuracy)); reports of European companies in PDF are read
+  less well for now (64% of their figures right on a first sample).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
