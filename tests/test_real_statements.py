@@ -322,3 +322,16 @@ def test_tagged_revenue_is_the_total_the_filing_tags():
     doc = ixbrl.parse(html.encode())
     m = F.extract(doc)["metrics"]
     assert m["revenue"]["cur"]["value"] == 52_862_000_000
+
+
+def test_columns_by_their_dates_in_a_53_week_year(no_ai, tmp_path):
+    """Kraft Heinz: "December 31, 2016 (52 weeks)  January 3, 2016 (53 weeks)  December 28, 2014": the prior year
+    is the column dated a year earlier, though its year reads 2016 too."""
+    pytest.importorskip("reportlab")
+    ops = _page(["The Example Food Company", "Consolidated Statements of Income", "(in millions, except per share data)"],
+                ["Dec. 31, 2016", "January 3, 2016", "Dec. 28, 2014"], [
+        ("Net sales", "26,487", "18,338", "10,922"), ("Cost of products sold", "16,901", "12,577", "7,645"),
+        ("Gross profit", "9,586", "5,761", "3,277"), ("Operating income", "6,142", "2,639", "1,764"),
+        ("Net income", "3,632", "634", "672")])
+    m = _run(tmp_path, [ops])["fin"]["metrics"]
+    assert m["revenue"]["cur"] == 26_487_000_000 and m["revenue"]["prev"] == 18_338_000_000

@@ -153,19 +153,19 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.1 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.2 |
 |---|---|---|
-| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,692 of 11,692) |
-| Main lines found (16 lines × 2 years) | 78.8% | **99.1%** |
+| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,783 of 11,783) |
+| Main lines found (16 lines × 2 years) | 78.8% | **99.8%** |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.1 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.2 |
 |---|---|---|
 | Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,905 of 1,905) |
 | Main lines of the 10-Qs found | 82.2% | **100%** |
 
 The rules were first fixed on the 40 latest reports; on the other years, which they had not seen, they then read
 96.6% (2019) and 98.4% (2015–2021) right, and what was still wrong there was fixed in turn. So 100% means "no
-error left on these 269 reports", not "no error possible": another layout can still leave a line unread (0.9% of the
+error left on these 269 reports", not "no error possible": another layout can still leave a line unread (0.2% of the
 main lines here, mostly lines a statement does not print) or, rarely, read one from the wrong place. The page of every
 figure is shown, so it can be checked. Inline XBRL filings need no such measure: their figures are the tags
 themselves.

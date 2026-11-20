@@ -37,7 +37,7 @@ PATTERNS: dict[str, list[str]] = {
     "operating_income": [r"operating (income|profit|loss)( \(loss\))?", r"operating \(loss\) income", _RES + r" from operations",
                          r"(ebit|operating result)",
                          r"risultato operativo", r"utile operativo", r"reddito operativo"],
-    "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?", _RESULT + r"( from continuing operations)? before (the )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
+    "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",
                       r"(income|earnings|profit|loss|\(loss\) income|income \(loss\))( \(loss\))? from continuing operations before (provision|\(?benefit|income tax|tax).*",
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
@@ -173,8 +173,9 @@ def _titles(text: str, limit: int = 700):
     for m in _title_spots(text, limit):
         q = _QUAL.search(text[max(0, m.start() - 60):m.start()])
         start = m.start() - (len(q.group()) if q else 0)
-        if not text[start:start + 1].isupper():
-            continue
+        if not text[start:start + 1].isupper() and not (start < 200 and re.match(r"\s*[\(A-Z\d]", text[m.end():m.end() + 20])):
+            continue                                   # lowercase, unless a heading set in lowercase ("intel corporation
+                                                       # consolidated statements of income  Years Ended (In Millions…")
         prev = re.search(r"([A-Za-z][\w'’&.-]*)[^\w]*$", text[max(0, start - 40):start])
         if prev and (re.fullmatch(PROSE_WORD, prev.group(1)) or re.search(r"['’]s$", prev.group(1))):
             continue                                   # "in the …", "the Company's Consolidated Statements of …"
@@ -431,7 +432,8 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
 
 
 BOILERPLATE = re.compile(r"(the |see )?(accompanying )?notes to (the )?(consolidated )?financial statements are an integral part of (these|this)"
-                         r"( consolidated)?( financial)? statements?\.?|see (the )?accompanying notes[^.]*\.?", re.I)
+                         r"( consolidated)?( financial)? statements?\.?|see (the )?accompanying notes[^.]*\.?"
+                         r"|see notes to (the )?(consolidated )?financial statements\.?", re.I)
 
 
 def _head(text: str, n: int = 300) -> str:
@@ -461,7 +463,8 @@ def statement_pages(texts: list[str]) -> list[int]:
     best: dict[str, tuple] = {}
     first: dict[str, tuple] = {}
     for i, t in enumerate(texts):
-        t = t[statement_start(t):]
+        start = statement_start(t)
+        t = t[start:]
         head = _head(t)                                 # not the footer some PDFs give first ("… Notes to …")
         kind = page_statement(t)
         if not kind or re.search(r"analysis of|notes to|discussion and analysis|report of independent|exhibits and financial statement schedules", head, re.I):
@@ -475,7 +478,7 @@ def statement_pages(texts: list[str]) -> list[int]:
             continue
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
-        top = title.start() < 200 or title.start() > len(t) - 250
+        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250
         rank = (not re.search(NOT_PRIMARY, head, re.I), top, "consolidat" in (head + " " + title.group()).lower(),
                 not re.search(r"comprehensive", head, re.I), figs)
         if kind not in best or rank > best[kind][0]:
@@ -488,8 +491,8 @@ def statement_pages(texts: list[str]) -> list[int]:
         # Flows  $ in millions" / the columns overleaf)
         title = title_match(t)
         kind = page_statement(t)
-        if kind and title and len(re.findall(r"\(?\d[\d,]{2,}\)?", t)) < 12 and _continues(texts[i + 1]):
-            rank = (not re.search(NOT_PRIMARY, t[:300], re.I), True, "consolidat" in (t[:300] + " " + title.group()).lower(),
+        if kind and title and title.start() > len(t) - 300 and len(re.findall(r"\(?\d[\d,]{2,}\)?", t)) < 12 and _continues(texts[i + 1]):
+            rank = (not re.search(NOT_PRIMARY, t[:300], re.I), True, "consolidat" in t[max(0, title.start() - 60):title.end()].lower(),
                     not re.search(r"comprehensive", title.group(), re.I), len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])))
             if kind not in best or rank > best[kind][0]:
                 best[kind] = (rank, i + 1)
@@ -503,8 +506,15 @@ def statement_pages(texts: list[str]) -> list[int]:
     pages |= {i + 1 for i in pages if i + 1 < len(texts) and page_statement(texts[i + 1]) == page_statement(texts[i])
               and (re.search(r"continued", texts[i + 1][:300], re.I) or not re.search(r"comprehensive", (title_match(texts[i + 1]) or [""])[0], re.I))
               and len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])) >= 12}
-    # a statement that goes on over the next page (its totals there)
-    return sorted(pages | {i + 1 for i in pages if i + 1 < len(texts) and i + 1 not in pages and _continues(texts[i + 1])})
+    # a statement that goes on over the next page (its totals there), past a blank page
+    nxt = {}
+    for i in pages:
+        j = i + 1
+        if j < len(texts) and len(texts[j].strip()) < 20:
+            j += 1
+        if j < len(texts) and j not in pages and _continues(texts[j]):
+            nxt[i] = j
+    return sorted(pages | set(nxt.values()))
 
 
 def _is_note_ref(f: dict) -> bool:
@@ -617,8 +627,15 @@ def by_position(nums: list, cols: list[float], n: int) -> Optional[list]:
     return cells if placed else None
 
 
-def _columns(nums: list, years: list, quarters: Optional[list] = None) -> tuple:
-    """(current, comparative) figure of a row, by the years (or quarter codes) heading the page's columns."""
+def _columns(nums: list, years: list, quarters: Optional[list] = None, dates: Optional[list] = None) -> tuple:
+    """(current, comparative) figure of a row, by the years (or quarter codes) heading the page's columns; by their
+    dates when each column has one and the years alone do not tell (Kraft Heinz: "December 31, 2016 (52 weeks)
+    January 3, 2016 (53 weeks) December 28, 2014")."""
+    if dates and len(dates) == len(years) >= 2 and len(nums) >= len(years) and not quarters \
+            and (len(set(years)) < len(years) or max(years) - 1 not in years):
+        cur_i = dates.index(max(dates))
+        prev = [i for i, d in enumerate(dates) if 350 <= (dates[cur_i] - d).days <= 380]
+        return nums[cur_i], (nums[prev[0]] if prev else None)
     if quarters and len(nums) >= len(quarters):
         top = max(quarters)
         cur_i = quarters.index(top)
@@ -629,6 +646,8 @@ def _columns(nums: list, years: list, quarters: Optional[list] = None) -> tuple:
         top = max(years)
         cur_i = years.index(top)
         prev_i = years.index(top - 1) if top - 1 in years else None
+        if prev_i is None and len(years) == 2 and top - min(years) == 2:
+            prev_i = 1 - cur_i                         # a 53-week year: "January 3, 2016 and December 28, 2014"
         return nums[cur_i], (nums[prev_i] if prev_i is not None else None)
     if len(years) >= 2 and years[0] < years[-1]:          # ascending columns, some cells empty: the last ones
         return nums[-1], (nums[-2] if len(nums) > 1 else None)
@@ -659,17 +678,19 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     # the column header, period and scale of a page are those of the statement on it, wherever it starts
     raw = page_text
     page_text = {p: t[statement_start(t):] for p, t in page_text.items()}
+    before_of = {p: (p - 1 if p - 1 in page_text else p - 2 if p - 2 in page_text and p - 1 not in page_text else None) for p in page_text}
     for p in sorted(page_text):
         # a page that carries on the statement before it: read with that statement's title, scale and column years
         # (the last statement of that page: a release prints its balance sheet under its statement of income)
-        last = list(_headings(raw[p - 1])) if p - 1 in page_text else []
-        foot = foot_title(raw[p - 1]) if p - 1 in page_text else None
+        q = before_of[p]                               # the page before (past a blank page that was not read)
+        last = list(_headings(raw[q])) if q else []
+        foot = foot_title(raw[q]) if q else None
         if foot:
             last = [foot]                              # the statement titled at the foot of the page before
         if last and not title_match(page_text[p]) \
                 and not re.search(r"notes to|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
                                   _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?", page_text[p][-300:], re.I):
-            prev = raw[p - 1][last[-1].start():]
+            prev = raw[q][last[-1].start():]
             row = re.search(r"\(?\$?\s?\d{1,3}(,\d{3})+", prev)           # the header ends where the first amount is
             page_text[p] = prev[:min(row.start() if row else 300, 400)] + " " + page_text[p]
     from datetime import date
@@ -728,14 +749,15 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     for p in sorted(page_text):
         first = next(_titles(raw[p], len(raw[p])), None)
         top = raw[p][:first.start()] if first else raw[p]
-        before = [m for m in _headings(raw[p - 1])] if p - 1 in page_text else []
-        foot = foot_title(raw[p - 1]) if p - 1 in page_text else None
+        q = before_of[p]
+        before = [m for m in _headings(raw[q])] if q else []
+        foot = foot_title(raw[q]) if q else None
         if foot:
             before = [foot]
         if before and len(re.findall(r"\d,\d{3}", top)) >= 2:
             # its top carries on the last statement of the page before (a release's cash flow statement under its
             # statement of income goes on overleaf)
-            kinds[p].add(page_statement(before[-1].group()) or kind_of[p - 1])
+            kinds[p].add(page_statement(before[-1].group()) or kind_of[q])
     kinds = {p: k - {""} for p, k in kinds.items()}
     # the document's own statements: those of its latest year (not an investee's older ones printed after them), in
     # full rather than condensed (a 10-K's quarterly restatements)
@@ -778,7 +800,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             nums = cells                               # by where each figure sits under the column headers
         elif ys and not qs and len(nums) < len(ys):
             nums = _with_dashes(nums, label, text, len(ys))
-        cur_f, prev_f = _columns(nums, ys, qs)
+        cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
         if cur_f is None:
             continue                                   # nothing in the current column ("—")
         scale = 1.0 if key in PER_SHARE else (page_scale(text) if page_scale(text) != 1.0 else doc_scale)
