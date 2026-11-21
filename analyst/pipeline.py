@@ -43,7 +43,7 @@ html,body{margin:0;background:transparent}
 
 
 # bumped whenever the reading changes, so documents read by older code are read again
-PIPELINE_VERSION = 18
+PIPELINE_VERSION = 19
 
 
 def _id(*parts) -> str:
