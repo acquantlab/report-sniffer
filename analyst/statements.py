@@ -597,7 +597,7 @@ def note_column(text: str) -> bool:
     """A page whose column header, above its first amount, names a "Note" column ("EUR million Note 2023 2022",
     "Note 31.12.2023"); not "The accompanying Notes to the Consolidated Financial Statements" (Nike)."""
     first = re.search(r"(?<![\d.,])\d{1,3}[,.]\d{3}(?!\d)|(?<![\d.,])\d{1,3} \d{3}(?!\d)", text)   # the first amount, not "2023 2022", "31.12.2023"
-    return bool(NOTE_HEAD.search(text[:first.start() if first else 600][-300:]))
+    return bool(NOTE_HEAD.search(text[:min(first.start() if first else 800, 800)]))
 
 
 def _drop_note_ref(nums: list, years: list, note_col: bool = False) -> list:
