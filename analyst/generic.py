@@ -253,7 +253,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, on_ocr=None) -> dict:
                 fid = len(facts)
                 facts.append({"id": fid, "label": f["label"] or t("Cifra", "Figure"), "value": f["value"], "display": wd["t"], "page": i + 1,
                               "kind": "num", "col": "Valore", "key": f["score"] >= 2, "score": f["score"], "inline": f["inline"],
-                              "x1": round(wd["x"] + wd["w"], 1)})
+                              "x1": round(wd["x"] + wd["w"], 1), "y": round(wd["y"] + wd["h"] / 2, 1)})
                 attrs = f' class="w xf" data-f="{fid}"'
             elif id(wd) in line_heads:
                 hid = len(headings)
@@ -501,7 +501,14 @@ def _label_figures(words: list[dict], sep: Optional[str] = None) -> list[dict]:
                 continue                                  # "(17 CFR 240.14d-2(b))"
             if re.fullmatch(r"\(\d\)", wd["t"]) and re.search(r"[A-Za-z]$", prev_w) and (next_w in ("$", "€", "£") or re.search(r"\d[,.]\d", next_w)):
                 continue                                  # a footnote mark after the label: "Basic earnings per share (2)  $ 20.68"
-            label_words = [w["t"] for w in ln[:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-24:]
+            start = 0
+            for j in range(k - 1, -1, -1):
+                # two tables side by side: the label of this one starts after the other's figures ("Cash … 277 125
+                # 157 | Total equity and liabilities 6,838 …")
+                if is_figure(ln[j]["t"]) and any(re.search(r"[A-Za-z]{2,}", w["t"]) for w in ln[j + 1:k]):
+                    start = j + 1
+                    break
+            label_words = [w["t"] for w in ln[start:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-24:]
             label = unsplit(" ".join(label_words))
             if not label and li > 0:
                 label = _section_total(lines, li) or " ".join(w["t"] for w in lines[li - 1] if not is_figure(w["t"]))[:80]

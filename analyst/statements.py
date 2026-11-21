@@ -679,6 +679,16 @@ def _with_dashes(nums: list, label: str, text: str, n: int) -> list:
     return nums
 
 
+def _in_reading_order(fs) -> list:
+    """A row's figures from the left when they sit on one line (the Danish ESEF prints give their text column by
+    column); in the text's order otherwise (a label over two rows: "Basic" and "Diluted")."""
+    fs = sorted(fs, key=lambda f: f["id"])
+    ys = [f["y"] for f in fs if "y" in f]
+    if len(ys) == len(fs) > 1 and max(ys) - min(ys) <= 3 and all("x1" in f for f in fs):
+        return sorted(fs, key=lambda f: f["x1"])
+    return fs
+
+
 def _right(f: dict) -> float:
     """Where an amount ends on the page, its closing parenthesis aside (columns align on the digits)."""
     return f["x1"] - (3.5 if f["display"].rstrip().endswith(")") else 0)
@@ -803,7 +813,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
-        nums = sorted((f for f in fs if not f.get("inline")), key=lambda f: f["id"])   # not "net of $35, $46 and $32" in a label
+        # in reading order: by line, then left to right (the text order of some PDFs is not, the Danish ESEF prints);
+        # not "net of $35, $46 and $32" in a label
+        nums = _in_reading_order(f for f in fs if not f.get("inline"))
         ys = header_years(page_text.get(page, ""))
         if key == "net_income" or re.match(r"(net )?(income|earnings|loss|\(loss\) income|income \(loss\)|\(loss\) earnings|earnings \(loss\))"
                                             r"( \(loss\))? per (common |ordinary )?share\b", _clean(label)):
@@ -824,7 +836,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if not nums:
             continue
         n = len(header_quarters(page_text.get(page, ""))) or len(dict.fromkeys(ys))
-        row = _drop_note_ref(sorted((f for f in fs if not f.get("inline")), key=lambda f: f["id"]), ys, note_col.get(page, False))
+        row = _drop_note_ref(_in_reading_order(f for f in fs if not f.get("inline")), ys, note_col.get(page, False))
         cells = by_position(row if key not in PER_SHARE else nums, cols.get(page, []), n)
         if cells is not None and key not in PER_SHARE:
             kept = {id(f) for f in _amounts(row, key)}   # the amounts of the row, not its per-share figures or percentages
