@@ -483,7 +483,8 @@ FIGURES = re.compile(r"\(?\d[\d,]{2,}\)?|(?<![\w.,])\(?-?\d{1,3}[.,]\d\)?(?![\d%
 
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
-               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information|\beliminations\b"
+               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
+               r"|results? of the segments?\b|\bby (operating |business )?segments?\b|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
                r"(?!\s+(and (its )?subsidiaries|group|consolidated))")
@@ -890,7 +891,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
                 # net income from a table of its equity-accounted investments)
                 kind = statement_of(key)
                 rows = {pg: len({k for k, cs in found.items() if statement_of(k) == kind and any(c[0] == pg for c in cs)}) for pg in page_text}
-                cands = [c for c in cands if kind in kinds[c[0]] or rows[c[0]] >= 3]   # Costco: a balance sheet with no title
+                equity = {pg for pg in page_text if len(re.findall(r"share premium|treasury shares|retained earnings|other reserves", raw[pg][:600], re.I)) >= 2}
+                cands = [c for c in cands if kind in kinds[c[0]] or (rows[c[0]] >= 3 and c[0] not in equity)]   # Costco: a balance sheet with no title
             if not cands:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
