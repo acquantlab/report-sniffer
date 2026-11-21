@@ -654,6 +654,8 @@ def _with_dashes(nums: list, label: str, text: str, n: int) -> list:
             if t.group().isalpha():
                 break
             cells.append(None if t.group() in "—–-" else t.group())
+        if len(cells) == n + 1 and cells[0] and re.fullmatch(r"\d{1,2}(\.\d{1,2})*", cells[0]):
+            cells = cells[1:]                          # a note number before the cells ("… shares 21 - (367,256) - (367,256)")
         amounts = [c for c in cells if c is not None]
         if len(cells) == n and len(amounts) < n and amounts == want:
             it = iter(nums)
