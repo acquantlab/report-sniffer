@@ -826,18 +826,20 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     for key, cands in found.items():
         for page, *_ in cands:
             page_hits[page] = page_hits.get(page, 0) + 1
-    def title_score(t: str) -> int:
+    def title_score(t: str, whole: str = "") -> int:
         m = title_match(t) or next(_titles(t, len(t)), None)   # or one further down (Arctic Paper's cash flow statement under
         if not m:                                              # the end of its balance sheet)
             return 0
-        head = t[:700].lower() + " " + m.group().lower()
+        head = t[:700].lower() + " " + t[max(0, m.start() - 60):m.end()].lower()    # "Consolidated" before a title lower down
         if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
             return 1
         if len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5:
             return 1                       # amounts to the cent ("32,298,207.32"): a company's statutory accounts, not the group's
         # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
-        return 3 if "consolidat" in head or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
-    titled = {p: title_score(t) for p, t in page_text.items()}
+        i = whole.find(m.group())                  # the page before the cut: "Consolidated " right before "cash flow statement"
+        before = whole[max(0, i - 60):i].lower() if i > 0 else ""
+        return 3 if "consolidat" in head or "consolidat" in before or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
+    titled = {p: title_score(t, raw[p]) for p, t in page_text.items()}
     kind_of = {p: page_statement(t) for p, t in page_text.items()}
     kinds = {p: page_kinds(raw[p]) | {kind_of[p]} for p in page_text}
     for p in sorted(page_text):
@@ -865,6 +867,10 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
     scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
     doc_scale = max(set(scales), key=scales.count) if scales and len(set(scales)) == 1 else 1.0
+
+    def kind_rows(pg: int, kind: str) -> int:
+        """How many lines of that statement the page has: the statement itself over a summary of it (Arctic Paper)."""
+        return len({k for k, cs in found.items() if statement_of(k) == kind and any(c[0] == pg for c in cs)})
 
     metrics, years = {}, None
     head: dict[str, dict] = {}
@@ -900,7 +906,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
                                                    year_of[c[0]] >= top_year, not cond[c[0]], titled.get(c[0], 0),
-                                                   page_hits[c[0]], kind_of.get(c[0]) == statement_of(key), _line_rank(key, c[2]),
+                                                   kind_rows(c[0], statement_of(key)), page_hits[c[0]], kind_of.get(c[0]) == statement_of(key),
+                                                   _line_rank(key, c[2]),
                                                    len(c[1]) >= 2, -c[0],
                                                    # the balance sheet's own total over a smaller table's on its page (VIEs)
                                                    abs(c[1][0]["value"]) if key in ("total_assets", "total_liabilities", "liab_and_equity") else 0))
