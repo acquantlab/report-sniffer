@@ -30,7 +30,9 @@ PATTERNS: dict[str, list[str]] = {
                 r"margine di intermediazione", r"proventi operativi netti", r"net banking income", r"total operating income", r"total income",
                 r"net interest(,)? (and|fee and) (other|non-?interest|commission) (banking )?(income|revenues?)", r"total net interest and non-?interest income",
                 r"(totale )?ricavi( netti)?( delle vendite)?( e delle prestazioni)?", r"fatturato( netto)?", r"net revenues?",
-                r"(total )?insurance revenues?", r"ricavi assicurativi( derivanti dai contratti di assicurazione emessi)?"],
+                r"(total )?insurance revenues?", r"ricavi assicurativi( derivanti dai contratti di assicurazione emessi)?",
+                # IFRS 15: "Revenue from contracts with customers"
+                r"(total )?revenues? from (contracts with customers|sales( of goods)?( and services)?)", r"ricavi (da|derivanti da) contratti con (i )?clienti"],
     "cost_of_revenue": [r"(total )?cost of (sales|revenues?|goods sold)", r"cost of products sold", r"costo del venduto", r"costi? delle vendite"],
     "gross_profit": [r"gross (profit|margin)", r"(margine|utile) lordo"],
     "rnd": [r"research,? (and )?development( expenses?| costs?)?", r"(costi|spese) (di|per) ricerca e sviluppo"],
