@@ -190,7 +190,7 @@ text.
 
 **European reports in PDF** are measured too: `bench/esef.py` prints ESEF annual reports of European companies
 (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
-the same report tags. On 32 reports from 13 countries: **607 of 607 figures read are right** (v2.2.4: 423 of 462;
+the same report tags. On 32 reports from 13 countries: **613 of 613 figures read are right** (v2.2.4: 423 of 462;
 v2.2.3: 64%); 2 more equal the printed figure where the report's own tag is off (Elkem tags its EPS at a hundredth).
 Fewer lines are found than in US reports (96% of those printed): some layouts (statements printed as vertical text,
 a statement split over pages without titles) leave a line unread rather than read wrong. Read now: scales such as
