@@ -878,7 +878,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
 
     def condensed(t: str) -> bool:
         m = title_match(t)
-        return bool(m and re.search(r"condensed", t[max(0, m.start() - 60):m.end() + 40], re.I))   # "Balance sheet condensed by main items"
+        # "Balance sheet condensed by main items"; a bank's "Reclassified consolidated income statement" after the official one
+        return bool(m and re.search(r"condensed|reclassified", t[max(0, m.start() - 60):m.end() + 40], re.I))
     cond = {p: condensed(t) for p, t in page_text.items()}
     # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
     scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
