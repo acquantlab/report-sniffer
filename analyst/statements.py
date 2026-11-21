@@ -40,6 +40,7 @@ PATTERNS: dict[str, list[str]] = {
     "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",
                       r"(income|earnings|profit|loss|\(loss\) income|income \(loss\))( \(loss\))? from continuing operations before (provision|\(?benefit|income tax|tax).*",
+                      r"(income|profit|result|earnings) after financial (items|net)",   # Swedish reports: before taxes
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
     "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income",
                    r"(income )?tax (expense|provision|benefit)( \(benefit\)| \(expense\))?",
@@ -185,7 +186,7 @@ def column_years(text: str) -> Optional[tuple[int, int]]:
 YEAR = re.compile(r"(?<![\d,.$])((?:19|20)\d\d)(?![\d,.%])")
 STATEMENT_TITLE = re.compile(
     r"consolidated (balance sheets?|statements? of (financial (position|condition)|(\((loss|income)\) )?(operations|income|earnings)( \(loss\))?"
-    r"|comprehensive (\(loss\) )?(income|loss)( \(loss\))?|cash flows?))"
+    r"|(total )?comprehensive (\(loss\) )?(income|loss)( \(loss\))?|cash flows?))"
     r"|statements? of ((\((loss|income)\) )?(operations|income|earnings)( \(loss\))?|cash flows?|financial position)|balance sheets?|income statements?"
     r"|cash flows? statements?|statements? of profit (or|and) loss|profit and loss (account|statement)s?"
     r"|conto economico|stato patrimoniale|rendiconto finanziario|situazione patrimoniale", re.I)
@@ -383,7 +384,7 @@ def page_period(text: str) -> dict:
 IS_KEYS = {"revenue", "cost_of_revenue", "gross_profit", "rnd", "opex_total", "operating_income", "pretax_income", "income_tax",
            "net_income", "profit_total", "eps_diluted", "diluted_shares", "interest_expense"}
 CF_KEYS = {"cfo", "cfi", "cff", "capex", "buybacks", "dividends", "sbc", "cash_change", "fx_effect", "cash_hfs"}
-IS_TITLE = re.compile(r"statements? of (consolidated )?((\((loss|income)\) )?(operations|income|earnings)|comprehensive (\(loss\) )?(income|loss))"
+IS_TITLE = re.compile(r"statements? of (consolidated )?((\((loss|income)\) )?(operations|income|earnings)|(total )?comprehensive (\(loss\) )?(income|loss))"
                       r"|income statements?|statements? of profit (or|and) loss|profit and loss (account|statement)s?|conto economico", re.I)
 CF_TITLE = re.compile(r"statements? of (consolidated )?cash flows?|cash flows? statements?|rendiconto finanziario", re.I)
 BS_TITLE = re.compile(r"balance sheets?|statements? of (consolidated )?financial (position|condition)|stato patrimoniale|situazione patrimoniale", re.I)
