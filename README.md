@@ -190,7 +190,7 @@ text.
 
 **European reports in PDF are read less well than US ones.** `bench/esef.py` prints ESEF annual reports of European
 companies (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with
-the value the same report tags. On 32 reports from 13 countries: 537 of 559 figures right (96.1%; v2.2.4: 423 of 462; v2.2.3: 64%). Read
+the value the same report tags. On 32 reports from 13 countries: 537 of 557 figures right (96.4%; v2.2.4: 423 of 462; v2.2.3: 64%). Read
 now: scales such as "DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF;
 decimal commas; dates such as "31.12.2023"; "Note" columns; the group's statements rather than the parent company's.
 Still wrong: some reports whose group and parent statements look alike. Check European figures against their page.
@@ -407,7 +407,7 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
   equals the value filed with the SEC (see [Accuracy](#accuracy)); reports of European companies in PDF are read
-  less well for now (96.1% of their figures right on a sample of 32).
+  less well for now (96.4% of their figures right on a sample of 32).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).

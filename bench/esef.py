@@ -97,6 +97,8 @@ def truth(f: dict) -> dict:
         vals = {"cur": defaultdict(list), "prev": defaultdict(list)}
         for c in A.concepts(F, key):
             for per, v in by.get(c, []):
+                if key == "revenue" and (v == 0 or (c == "InsuranceRevenue" and "InterestRevenueCalculatedUsingEffectiveInterestMethod" in by)):
+                    continue                           # a bank's insurance revenue (or "0" without insurance) is a part, not its revenue
                 if "/" in per:
                     if spec[2] == "stock":
                         continue
