@@ -188,12 +188,15 @@ have no statements at all. McDonald's releases, whose text layer is glyph codes,
 none wrong). For the OCR measure every page is read as a picture (`FORCE_OCR=1`), at 144 dpi, without the PDF's
 text.
 
-**European reports in PDF are read less well than US ones.** `bench/esef.py` prints ESEF annual reports of European
-companies (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with
-the value the same report tags. On 32 reports from 13 countries: 571 of 575 figures right (99.3%; v2.2.4: 423 of 462; v2.2.3: 64%). Read
-now: scales such as "DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF;
-decimal commas; dates such as "31.12.2023"; "Note" columns; the group's statements rather than the parent company's.
-Still wrong: some reports whose group and parent statements look alike. Check European figures against their page.
+**European reports in PDF** are measured too: `bench/esef.py` prints ESEF annual reports of European companies
+(filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
+the same report tags. On 32 reports from 13 countries: **577 of 577 figures read are right** (v2.2.4: 423 of 462;
+v2.2.3: 64%); 2 more equal the printed figure where the report's own tag is off (Elkem tags its EPS at a hundredth).
+Fewer lines are found than in US reports (92% of those printed): some layouts (statements printed as vertical text,
+a statement split over pages without titles) leave a line unread rather than read wrong. Read now: scales such as
+"DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF; decimal commas;
+dates such as "31.12.2023"; "Note" columns; side-by-side tables; "statement of profit or loss"; the group's statements
+rather than the parent company's, a subsidiary's, a reclassified or a proportionate one.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
@@ -406,8 +409,8 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   a scan is read with OCR, which takes longer (1–3 s a page; a 200-page scan, several minutes) and can misread a blurred
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
-  equals the value filed with the SEC (see [Accuracy](#accuracy)); reports of European companies in PDF are read
-  less well for now (99.3% of their figures right on a sample of 32).
+  equals the value filed with the SEC (see [Accuracy](#accuracy)); on 32 European reports in PDF every
+  figure read equals the report's own tag, though fewer lines are found (92%).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
