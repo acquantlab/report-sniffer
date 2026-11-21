@@ -142,8 +142,10 @@ def run(f: dict) -> dict:
             o = (r["metrics"].get(key) or {}).get(w)
             cands = (gt.get(key) or {}).get(w, {})
             st = A.judge(key, o, cands)
-            if st == "wrong" and key == "eps_diluted" and o and any(abs(o["value"] - 100 * v) <= 0.006 for vs in cands.values() for v in vs):
-                st = "explained"                       # Elkem tags its EPS a hundredth of the printed one (0.0011 for 0.11)
+            if st == "wrong" and key == "eps_diluted" and o and any(abs(o["value"] - 100 * v) <= max(0.006, 0.005 * abs(o["value"]))
+                                                                    for vs in cands.values() for v in vs):
+                st = "explained"                       # Elkem tags its EPS a hundredth of the printed one (0.0011 for 0.11;
+                                                       # 0.1509, its basic EPS, for the diluted 15.04)
             if st == "none":
                 if not cands:
                     continue

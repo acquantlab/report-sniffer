@@ -43,7 +43,10 @@ PATTERNS: dict[str, list[str]] = {
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
     "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income",
                    r"(income )?tax (expense|provision|benefit)( \(benefit\)| \(expense\))?",
-                   r"(provision|benefit) ?/ ?\(?(benefit|provision)\)? for (income )?taxes( on income)?"],
+                   r"(provision|benefit) ?/ ?\(?(benefit|provision)\)? for (income )?taxes( on income)?",
+                   # Italian banks (Bank of Italy Circular 262): "300. Tax expenses (income) of the year from continuing operations"
+                   r"tax(es)? expenses? \(income\)( (of|for) the (year|period))?( from continuing operations)?",
+                   r"imposte sul reddito (dell'esercizio|del periodo) dell'operativit[aà] corrente"],
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"profit for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
@@ -875,7 +878,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
 
     def condensed(t: str) -> bool:
         m = title_match(t)
-        return bool(m and re.search(r"condensed", t[max(0, m.start() - 60):m.end() + 40], re.I))   # "Balance sheet condensed by main items"
+        # "Balance sheet condensed by main items"; a bank's "Reclassified consolidated income statement" after the official one
+        return bool(m and re.search(r"condensed|reclassified", t[max(0, m.start() - 60):m.end() + 40], re.I))
     cond = {p: condensed(t) for p, t in page_text.items()}
     # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
     scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
