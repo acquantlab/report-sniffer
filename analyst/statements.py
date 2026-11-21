@@ -44,7 +44,7 @@ PATTERNS: dict[str, list[str]] = {
                       r"(income|earnings|profit|loss|\(loss\) income|income \(loss\))( \(loss\))? from continuing operations before (provision|\(?benefit|income tax|tax).*",
                       r"(income|profit|result|earnings) after financial (items|net)",   # Swedish reports: before taxes
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
-    "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income",
+    "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income", r"taxes",
                    r"(income )?tax (expenses?|provision|benefit)( \(benefit\)| \(expense\))?",
                    r"(provision|benefit) ?/ ?\(?(benefit|provision)\)? for (income )?taxes( on income)?",
                    # Italian banks (Bank of Italy Circular 262): "300. Tax expenses (income) of the year from continuing operations"
@@ -89,7 +89,7 @@ PATTERNS: dict[str, list[str]] = {
                  r"(variazione delle )?disponibilit[aà] liquide.*(attivit[aà]|gruppi in dismissione) (possedute|destinate) (per la|alla) vendita.*"],
     "cash_change": [r"net (increase|decrease|increase \(decrease\)|\(decrease\) increase|change) in cash.*",
                     r"(increase|decrease|increase/\(decrease\)|increase \(decrease\)|\(decrease\)/increase|\(decrease\) increase) in cash,? (and )?cash equivalents.*", r"variazione (netta )?delle disponibilit[aà] liquide.*"],
-    "capex": [r"(purchases?|acquisitions?|additions?( to)?|payments?|expenditures?|investments?)( (of|to|for|in))?( acquisitions? of| acquire| purchases? of)? "
+    "capex": [r"(?!investments? property)(purchases?|acquisitions?|additions?( to)?|payments?|expenditures?|investments?)( (of|to|for|in))?( acquisitions? of| acquire| purchases? of)? "
               r"(property|premises|land|plant|fixed assets|buildings|capital assets)\b(?!.*(held for sale|proceeds)).*",
               r"(property|premises|land|plant|fixed assets|buildings)[\w ,]*? (additions|purchases|acquisitions|expenditures)",
               r"capital (expenditures?|spending)(,? (net|excluding|including) .*| \(.*\))?", r"investimenti in immobilizzazioni materiali", r"acquisti? di immobili,? impianti e macchinari"],
@@ -351,6 +351,12 @@ def header_years(text: str) -> list[int]:
         later = header_years(text[run[-1][0] + 4:run[0][0] + 400]) if run[-1][0] + 4 < len(text) else []
         if later and max(later) > max(ys):
             return later
+        # the dateline's year on the line above the header ("PERIOD ENDED DECEMBER 31 2023" / "Year 2023 Year 2022",
+        # Merlin) is no column
+        dated = lambda pos: re.search(r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s*$|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*$",
+                                      text[max(0, pos - 25):pos], re.I)
+        if len(ys) == 3 and ys[0] == ys[1] > ys[2] and dated(run[0][0]) and not dated(run[1][0]):
+            ys = ys[1:]
     # a dateline running into the header ("… 2022, 2021, and 2020  2022 2021 2020" read as 2020 2022 2021 2020):
     # columns are in order (2022 2021 2020), or the same block twice (2023 2022 2023 2022)
     def ordered(v):
@@ -404,6 +410,9 @@ def _line_rank(key: str, label: str) -> int:
     if key in ("cfo", "cfi", "cff"):
         # the total before its continuing-operations part; IFRS "cash generated from operations" is before interest and taxes
         return (2 if "activities" in label and not label.startswith("cash generated") else 1) * 2 - ("continuing operations" in label)
+    if key == "cash_change":
+        # the change after exchange-rate effects, as tagged, over the one before them (Arctic Paper prints both)
+        return 2 if re.search(r"\bafter\b.*exchange", label) else 0 if re.search(r"\bbefore\b.*exchange", label) else 1
     if key == "eps_diluted":
         # a row named as diluted EPS before one read under a heading; the net result before continuing operations
         return (2 if not label.endswith("(heading)") else 0) + ("continuing operations" not in label)
@@ -514,7 +523,10 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
 
 BOILERPLATE = re.compile(r"(the |see )?(accompanying )?notes to (the )?(consolidated )?financial statements are an integral part of (these|this)"
                          r"( consolidated)?( financial)? statements?\.?|see (the )?accompanying notes[^.]*\.?"
-                         r"|see notes to (the )?(consolidated )?financial statements\.?", re.I)
+                         r"|see notes to (the )?(consolidated )?financial statements\.?"
+                         # Arctic Paper: "… explanatory notes to the financial statements provided on pages 19 to 98
+                         # constitute an integral part hereof"
+                         r"|notes to (the )?(consolidated )?financial statements[^.]{0,60}?(constitute|form|are) an integral part (hereof|of)", re.I)
 
 
 def _head(text: str, n: int = 300) -> str:
@@ -534,6 +546,26 @@ def _continues(text: str) -> bool:
         if label != line and match(label):
             rows += 1
     return rows >= 2 and len(FIGURES.findall(text)) >= 12
+
+
+def _under_payments(label: str, text: str) -> bool:
+    """A cash flow row under a heading of payments for investments (Merlin: "Payments due to investments-" then
+    "Investment property", "Property, plant and equipment"), not under proceeds."""
+    for m in re.finditer(re.escape(label.strip()), text):
+        above = text[max(0, m.start() - 300):m.start()]
+        head = list(re.finditer(r"\b(payments?|purchases?|acquisitions?)( due to| for| of)? (investments?|non-current assets)\b", above, re.I))
+        if head and not re.search(r"\b(proceeds|collections?|receipts?|disposals?|financing activities)\b", above[head[-1].end():], re.I):
+            return True
+    return False
+
+
+def _caps_title(t: str, title) -> bool:
+    """A title set in capitals on a line of its own, with no amount above it, after a page's explanatory paragraph
+    (VIG: "The numbers next to the individual items … refer to …" then "CONSOLIDATED INCOME STATEMENT")."""
+    a = t.rfind("\n", 0, title.start()) + 1
+    b = t.find("\n", title.end())
+    line = t[a:b if b >= 0 else len(t)].strip()
+    return title.start() < 1000 and line.isupper() and len(line) < 80 and not re.search(r"\d[,.]\d{3}", t[:title.start()])
 
 
 def statement_pages(texts: list[str]) -> list[int]:
@@ -559,7 +591,7 @@ def statement_pages(texts: list[str]) -> list[int]:
             continue
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
-        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250
+        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title)
         cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
         rank = (not re.search(NOT_PRIMARY, head, re.I) and not cents, top, "consolidat" in (head + " " + title.group()).lower(),
@@ -800,6 +832,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     # the column header, period and scale of a page are those of the statement on it, wherever it starts
     raw = page_text
     page_text = {p: t[statement_start(t):] for p, t in page_text.items()}
+    carried: dict[int, str] = {}
     before_of = {p: (p - 1 if p - 1 in page_text else p - 2 if p - 2 in page_text and p - 1 not in page_text else None) for p in page_text}
     for p in sorted(page_text):
         # a page that carries on the statement before it: read with that statement's title, scale and column years
@@ -815,6 +848,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             prev = raw[q][last[-1].start():]
             row = re.search(r"\(?\$?\s?\d{1,3}(,\d{3})+", prev)           # the header ends where the first amount is
             page_text[p] = prev[:min(row.start() if row else 300, 400)] + " " + page_text[p]
+            carried[p] = raw[q][max(0, last[-1].start() - 60):last[-1].start()].lower()   # "Consolidated " before that title
     from datetime import date
     import calendar
     from . import financials as F
@@ -828,6 +862,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
+        if not key and _clean(label) == "property, plant and equipment" and _under_payments(label, raw.get(page, "")):
+            key = "capex"                              # "Payments due to investments-" / "Property, plant and equipment"
         # in reading order: by line, then left to right (the text order of some PDFs is not, the Danish ESEF prints);
         # not "net of $35, $46 and $32" in a label
         nums = _in_reading_order(f for f in fs if not f.get("inline"))
@@ -876,6 +912,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         before = whole[max(0, i - 60):i].lower() if i > 0 else ""
         return 3 if "consolidat" in head or "consolidat" in before or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t, raw[p]) for p, t in page_text.items()}
+    for p, b in carried.items():
+        if titled[p] == 2 and "consolidat" in b:
+            titled[p] = 3                              # carries on the consolidated statement of the page before (Arctic Paper)
     for p in titled:
         # a page that goes on from a subsidiary's or a note's data on the page before, untitled at its top (Rottneros'
         # figures in Arctic Paper's report): not the group's statement either
@@ -893,7 +932,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         foot = foot_title(raw[q]) if q else None
         if foot:
             before = [foot]
-        if before and len(re.findall(r"\d,\d{3}", top)) >= 2:
+        # amounts with thousands by comma or space ("146 720", Arctic Paper), not inside a longer number
+        if before and len(re.findall(r"(?<!\d)(?<!\d[ ,.])\d{1,3}[, ]\d{3}(?!\d)", top)) >= 2:
             # its top carries on the last statement of the page before (a release's cash flow statement under its
             # statement of income goes on overleaf)
             kinds[p].add(page_statement(before[-1].group()) or kind_of[q])
