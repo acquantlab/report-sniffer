@@ -303,6 +303,8 @@ def dot_dates(text: str) -> list:
                 out.append(date(y + 2000 if y < 100 else y, mo, d))
             except ValueError:
                 pass
+        if out and out[0] in out[1:]:
+            out = out[:out.index(out[0], 1)]       # two tables side by side, each with its dates: the first one's
         if len(out) >= 2 and len({x.year for x in out}) > 1:
             return out
     return []
@@ -587,7 +589,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
