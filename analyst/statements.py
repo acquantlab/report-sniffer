@@ -129,9 +129,10 @@ def match(label: str) -> Optional[str]:
     s = _clean(label)
     if not s:
         return None
-    for key, pats in _COMPILED.items():
-        if any(p.match(s) for p in pats):
-            return key
+    for cand in (s, re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s)):    # or without a "Notes 6 y 18" column word
+        for key, pats in _COMPILED.items():
+            if any(p.match(cand) for p in pats):
+                return key
     return None
 
 
