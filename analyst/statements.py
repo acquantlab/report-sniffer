@@ -385,7 +385,8 @@ def _line_rank(key: str, label: str) -> int:
     """Between two lines of the same statement: total revenue before net sales, the result attributable to
     the company before the result including minority interests."""
     if key == "revenue":
-        return 2 if label.startswith("total") else 1
+        # "Total revenues" before "Net sales"; "Total operating income" (revenue and other income, Elkem) after "Revenue"
+        return 0 if re.search(r"operating income", label) else 2 if label.startswith("total") else 1
     if key == "net_income":
         return 2 if "attributable to" in label else 1
     if key in ("cfo", "cfi", "cff"):
