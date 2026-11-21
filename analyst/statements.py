@@ -111,7 +111,6 @@ def _clean(label: str) -> str:
     label = re.sub(r"^(?:[A-Za-z]{1,2}\s+)+(?=[A-Z][a-z])", "", label.strip())
     s = label.lower().replace("’", "'").strip(" :.,;")
     s = re.sub(r"\s*\((note|nota) ?\d+\)|\s+\d{1,2}$", "", s)        # note references
-    s = re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s)                  # "Revenue Notes 6 y 18", its numbers read as figures
     s = re.sub(r"(?<=[a-z\)'])\((\d{1,2}|[a-h])\)|[*†‡]+", "", s)          # footnote marks: "net loss(2)", "total assets(a)"
     s = re.sub(r"\s\(([a-h]|\d{1,2})\)$", "", s)                            # "cost of sales (a)"
     s = re.sub(r"^(voce |item )?\d{1,3}(\.|\))\s*|^(voce |item )?\d{1,3}\s+|^[a-z]\)\s+", "", s)  # line numbers: "120. margine di intermediazione"
