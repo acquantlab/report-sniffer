@@ -134,6 +134,8 @@ def is_figure(token: str, allow_digit: bool = False) -> bool:
         return False
     if re.fullmatch(r"\d", t) and not allow_digit:
         return False
+    if re.fullmatch(r"\d{1,2}(\.\d{1,2}){2,}\.?", t):
+        return False                                    # a note number with dots ("2.1.6", "3.2.17"), not an amount
     return True
 
 
