@@ -484,7 +484,8 @@ FIGURES = re.compile(r"\(?\d[\d,]{2,}\)?|(?<![\w.,])\(?-?\d{1,3}[.,]\d\)?(?![\d%
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
-               r"|results? of the segments?\b|\bby (operating |business )?segments?\b|\beliminations\b"
+               r"|results? of the segments?\b|\bby (operating |business )?segments?\b"
+               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
                r"(?!\s+(and (its )?subsidiaries|group|consolidated))")
