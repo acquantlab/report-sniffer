@@ -503,10 +503,18 @@ def _label_figures(words: list[dict], sep: Optional[str] = None) -> list[dict]:
                 continue                                  # a footnote mark after the label: "Basic earnings per share (2)  $ 20.68"
             start = 0
             for j in range(k - 1, -1, -1):
-                # two tables side by side: the label of this one starts after the other's figures ("Cash … 277 125
-                # 157 | Total equity and liabilities 6,838 …")
+                # two tables side by side, with the same columns: the label of this one starts after the other's figures
+                # ("Cash … 277 125 157 | Total equity and liabilities 6,838 7,006 6,859"); not after figures in a
+                # sentence ("net of $46, $32 and $10, respectively, of non-cash capital expenditures (737)")
                 if is_figure(ln[j]["t"]) and any(re.search(r"[A-Za-z]{2,}", w["t"]) for w in ln[j + 1:k]):
-                    start = j + 1
+                    left = 0
+                    while j - left >= 0 and is_figure(ln[j - left]["t"]) and not _in_text(ln, j - left):
+                        left += 1
+                    right = 0
+                    while k + right < len(ln) and is_figure(ln[k + right]["t"]):
+                        right += 1
+                    if left >= 2 and left == right:
+                        start = j + 1
                     break
             label_words = [w["t"] for w in ln[start:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-24:]
             label = unsplit(" ".join(label_words))
