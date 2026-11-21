@@ -149,7 +149,7 @@ _CODE = r"(?:eur|€|sek|nok|dkk|usd|chf|pln|gbp)"
 SCALES_EU = [
     (rf"(?<![\w.]){_CUR} ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
     (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}", 1e6),
-    (rf"(?<![\w.]){_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
+    (rf"(?<![\w.])(?:in)?{_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
      rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b", 1e3),
 ]
 
@@ -505,7 +505,7 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
-               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a proportionate basis"
+               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
