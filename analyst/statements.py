@@ -40,7 +40,6 @@ PATTERNS: dict[str, list[str]] = {
     "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",
                       r"(income|earnings|profit|loss|\(loss\) income|income \(loss\))( \(loss\))? from continuing operations before (provision|\(?benefit|income tax|tax).*",
-                      _RESULT + r" before (income )?tax(es)? from continuing operations",
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
     "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income",
                    r"(income )?tax (expense|provision|benefit)( \(benefit\)| \(expense\))?",
