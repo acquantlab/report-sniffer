@@ -591,7 +591,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}|\d{1,2}(,\s?\d{1,2})+" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}/\d{1,2}\s*-\s*)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
@@ -617,7 +617,9 @@ PS_FIGURE = re.compile(r"\(?-?\d{1,3}\.\d{2,3}\)?")
 
 def is_per_share(f: dict) -> bool:
     """A figure printed like an amount per share: "1.94", "(0.82)", "($1.12)", "$ 3.58"."""
-    return bool(PS_FIGURE.fullmatch(re.sub(r"[$€£\s]", "", f["display"])))
+    shown = re.sub(r"[$€£\s]", "", f["display"])
+    # "4.537" read as 4,537 (a document whose thousands are dots) is an amount, not 4.537 a share
+    return bool(PS_FIGURE.fullmatch(shown)) and not (re.search(r"\.\d{3}\)?$", shown) and abs(f.get("value") or 0) >= 1000)
 
 
 def _amounts(nums: list, key: str) -> list:
