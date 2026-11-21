@@ -367,7 +367,9 @@ def _form_of(texts: list[str]) -> str:
 
 
 def _enough(m: dict) -> bool:
-    return len(m) >= 3 and bool({"revenue", "net_income"} & set(m))
+    # a statement of income, or a balance sheet or cash flow statement on its own (an insurer whose income statement
+    # is laid out otherwise)
+    return len(m) >= 3 and bool({"revenue", "net_income", "total_assets", "cfo"} & set(m))
 
 
 def _statement_metrics(g: dict) -> Optional[dict]:

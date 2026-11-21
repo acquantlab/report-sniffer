@@ -885,6 +885,10 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             # no statement titled as such: not from the parent company's statements either (AKVA, whose group
             # statements did not print as text): a line not read rather than the parent's figure as the group's
             cands = [c for c in cands if not re.search(NOT_PRIMARY, raw[c[0]][:900], re.I)]
+            if any(titled[p] >= 2 for p in page_text):
+                # other statements found, not this one: a page that looks like it, not any table with the line (Elkem's
+                # net income from a table of its equity-accounted investments)
+                cands = [c for c in cands if statement_of(key) in kinds[c[0]]]
             if not cands:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
