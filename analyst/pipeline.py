@@ -43,7 +43,7 @@ html,body{margin:0;background:transparent}
 
 
 # bumped whenever the reading changes, so documents read by older code are read again
-PIPELINE_VERSION = 15
+PIPELINE_VERSION = 16
 
 
 def _id(*parts) -> str:
@@ -367,7 +367,9 @@ def _form_of(texts: list[str]) -> str:
 
 
 def _enough(m: dict) -> bool:
-    return len(m) >= 3 and bool({"revenue", "net_income"} & set(m))
+    # a statement of income, or a balance sheet or cash flow statement on its own (an insurer whose income statement
+    # is laid out otherwise)
+    return len(m) >= 3 and bool({"revenue", "net_income", "total_assets", "cfo"} & set(m))
 
 
 def _statement_metrics(g: dict) -> Optional[dict]:

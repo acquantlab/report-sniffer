@@ -483,7 +483,8 @@ FIGURES = re.compile(r"\(?\d[\d,]{2,}\)?|(?<![\w.,])\(?-?\d{1,3}[.,]\d\)?(?![\d%
 
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
-               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|\beliminations\b"
+               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
+               r"|results? of the segments?\b|\bby (operating |business )?segments?\b|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
                r"(?!\s+(and (its )?subsidiaries|group|consolidated))")
@@ -827,8 +828,10 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         if not m:
             return 0
         head = t[:700].lower() + " " + m.group().lower()
-        if re.search(NOT_PRIMARY, head, re.I):
+        if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
             return 1
+        if len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5:
+            return 1                       # amounts to the cent ("32,298,207.32"): a company's statutory accounts, not the group's
         # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
         return 3 if "consolidat" in head or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t) for p, t in page_text.items()}
@@ -883,6 +886,13 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
             # no statement titled as such: not from the parent company's statements either (AKVA, whose group
             # statements did not print as text): a line not read rather than the parent's figure as the group's
             cands = [c for c in cands if not re.search(NOT_PRIMARY, raw[c[0]][:900], re.I)]
+            if any(titled[p] >= 2 for p in page_text):
+                # other statements found, not this one: a page that looks like it, not any table with the line (Elkem's
+                # net income from a table of its equity-accounted investments)
+                kind = statement_of(key)
+                rows = {pg: len({k for k, cs in found.items() if statement_of(k) == kind and any(c[0] == pg for c in cs)}) for pg in page_text}
+                equity = {pg for pg in page_text if len(re.findall(r"share premium|treasury shares|retained earnings|other reserves", raw[pg][:600], re.I)) >= 2}
+                cands = [c for c in cands if kind in kinds[c[0]] or (rows[c[0]] >= 3 and c[0] not in equity)]   # Costco: a balance sheet with no title
             if not cands:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
