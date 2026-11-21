@@ -166,7 +166,7 @@ year — with the value the company filed in XBRL with the SEC for the same peri
 
 | On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.3 |
 |---|---|---|
-| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,937 of 1,937) |
+| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,939 of 1,939) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
 
 | Scanned documents: the 29 earnings releases read **only with OCR**, as if they were scans | v2.2.3 |
