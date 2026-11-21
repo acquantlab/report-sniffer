@@ -900,7 +900,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
                                                    year_of[c[0]] >= top_year, not cond[c[0]], titled.get(c[0], 0),
-                                                   kind_of.get(c[0]) == statement_of(key), page_hits[c[0]], _line_rank(key, c[2]),
+                                                   page_hits[c[0]], kind_of.get(c[0]) == statement_of(key), _line_rank(key, c[2]),
                                                    len(c[1]) >= 2, -c[0],
                                                    # the balance sheet's own total over a smaller table's on its page (VIEs)
                                                    abs(c[1][0]["value"]) if key in ("total_assets", "total_liabilities", "liab_and_equity") else 0))
