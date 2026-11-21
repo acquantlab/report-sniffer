@@ -390,7 +390,7 @@ def _line_rank(key: str, label: str) -> int:
         return 2 if "attributable to" in label else 1
     if key in ("cfo", "cfi", "cff"):
         # the total before its continuing-operations part; IFRS "cash generated from operations" is before interest and taxes
-        return (2 if "activities" in label else 1) * 2 - ("continuing operations" in label)
+        return (2 if "activities" in label and not label.startswith("cash generated") else 1) * 2 - ("continuing operations" in label)
     if key == "eps_diluted":
         # a row named as diluted EPS before one read under a heading; the net result before continuing operations
         return (2 if not label.endswith("(heading)") else 0) + ("continuing operations" not in label)
@@ -586,7 +586,7 @@ def statement_pages(texts: list[str]) -> list[int]:
 def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     """A note number ("4") or a footnote mark the PDF prints apart from the label ("(2)"); under a "Note" column
     header, a note in parentheses too ("(16)", European reports) — elsewhere that is an amount (Pfizer's tax "(71)")."""
-    return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}" if note_col else ""), f["display"].strip()))
+    return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}|\d{1,2}(,\s?\d{1,2})+" if note_col else ""), f["display"].strip()))
 
 
 NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
