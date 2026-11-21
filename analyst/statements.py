@@ -89,7 +89,7 @@ PATTERNS: dict[str, list[str]] = {
                  r"(variazione delle )?disponibilit[aà] liquide.*(attivit[aà]|gruppi in dismissione) (possedute|destinate) (per la|alla) vendita.*"],
     "cash_change": [r"net (increase|decrease|increase \(decrease\)|\(decrease\) increase|change) in cash.*",
                     r"(increase|decrease|increase/\(decrease\)|increase \(decrease\)|\(decrease\)/increase|\(decrease\) increase) in cash,? (and )?cash equivalents.*", r"variazione (netta )?delle disponibilit[aà] liquide.*"],
-    "capex": [r"(purchases?|acquisitions?|additions?( to)?|payments?|expenditures?|investments?)( (of|to|for|in))?( acquisitions? of| acquire| purchases? of)? "
+    "capex": [r"(?!investments? property)(purchases?|acquisitions?|additions?( to)?|payments?|expenditures?|investments?)( (of|to|for|in))?( acquisitions? of| acquire| purchases? of)? "
               r"(property|premises|land|plant|fixed assets|buildings|capital assets)\b(?!.*(held for sale|proceeds)).*",
               r"(property|premises|land|plant|fixed assets|buildings)[\w ,]*? (additions|purchases|acquisitions|expenditures)",
               r"capital (expenditures?|spending)(,? (net|excluding|including) .*| \(.*\))?", r"investimenti in immobilizzazioni materiali", r"acquisti? di immobili,? impianti e macchinari"],
@@ -351,6 +351,12 @@ def header_years(text: str) -> list[int]:
         later = header_years(text[run[-1][0] + 4:run[0][0] + 400]) if run[-1][0] + 4 < len(text) else []
         if later and max(later) > max(ys):
             return later
+        # the dateline's year on the line above the header ("PERIOD ENDED DECEMBER 31 2023" / "Year 2023 Year 2022",
+        # Merlin) is no column
+        dated = lambda pos: re.search(r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s*$|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*$",
+                                      text[max(0, pos - 25):pos], re.I)
+        if len(ys) == 3 and ys[0] == ys[1] > ys[2] and dated(run[0][0]) and not dated(run[1][0]):
+            ys = ys[1:]
     # a dateline running into the header ("… 2022, 2021, and 2020  2022 2021 2020" read as 2020 2022 2021 2020):
     # columns are in order (2022 2021 2020), or the same block twice (2023 2022 2023 2022)
     def ordered(v):
@@ -540,6 +546,17 @@ def _continues(text: str) -> bool:
         if label != line and match(label):
             rows += 1
     return rows >= 2 and len(FIGURES.findall(text)) >= 12
+
+
+def _under_payments(label: str, text: str) -> bool:
+    """A cash flow row under a heading of payments for investments (Merlin: "Payments due to investments-" then
+    "Investment property", "Property, plant and equipment"), not under proceeds."""
+    for m in re.finditer(re.escape(label.strip()), text):
+        above = text[max(0, m.start() - 300):m.start()]
+        head = list(re.finditer(r"\b(payments?|purchases?|acquisitions?)( due to| for| of)? (investments?|non-current assets)\b", above, re.I))
+        if head and not re.search(r"\b(proceeds|collections?|receipts?|disposals?|financing activities)\b", above[head[-1].end():], re.I):
+            return True
+    return False
 
 
 def _caps_title(t: str, title) -> bool:
@@ -845,6 +862,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
+        if not key and _clean(label) == "property, plant and equipment" and _under_payments(label, raw.get(page, "")):
+            key = "capex"                              # "Payments due to investments-" / "Property, plant and equipment"
         # in reading order: by line, then left to right (the text order of some PDFs is not, the Danish ESEF prints);
         # not "net of $35, $46 and $32" in a label
         nums = _in_reading_order(f for f in fs if not f.get("inline"))
