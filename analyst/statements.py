@@ -590,7 +590,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}|\d{1,2}(,\s?\d{1,2})+" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
