@@ -42,6 +42,7 @@ PATTERNS: dict[str, list[str]] = {
     "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",
                       r"(income|earnings|profit|loss|\(loss\) income|income \(loss\))( \(loss\))? from continuing operations before (provision|\(?benefit|income tax|tax).*",
+                      _RESULT + r" before (income )?tax(es|ation)? from continuing operations",   # Greek reports
                       r"(income|profit|result|earnings) after financial (items|net)",   # Swedish reports: before taxes
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
     "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income", r"taxes",
@@ -855,8 +856,17 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     from .tables import period_label
     from .i18n import lang
     groups: dict[tuple[int, str], list[dict]] = {}
+    # side by side, the left column's label run into the right one's on the same row ("Cash and cash equivalents
+    # Total equity and liabilities" next to "Total equity and liabilities", the Danish ESEF): that row's figures
+    on_row: dict[tuple, set] = {}
     for f in facts:
-        groups.setdefault((f["page"], f["label"]), []).append(f)
+        if f.get("y") is not None:
+            on_row.setdefault((f["page"], round(f["y"])), set()).add(f["label"])
+    for f in facts:
+        label = f["label"]
+        mates = on_row.get((f["page"], round(f["y"])), set()) if f.get("y") is not None else set()
+        tail = next((m for m in mates if m != label and label.endswith(" " + m) and m.lower().startswith("total")), None)
+        groups.setdefault((f["page"], tail or label), []).append(f)
     note_col = {p: note_column(t) for p, t in page_text.items()}
     cols = {p: page_columns([f for f in facts if f["page"] == p], note_col[p]) for p in page_text}
     found: dict[str, list] = {}
@@ -998,11 +1008,17 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         text = page_text.get(page, "")
         ys = header_years(text)
         qs = header_quarters(text)
+        dashed = False
         if cells is not None and any(cells):
             nums = cells                               # by where each figure sits under the column headers
+            if ys and not qs and len(cells) == len(ys) and None in cells:
+                dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells   # an empty cell printed "-"
         elif ys and not qs and len(nums) < len(ys):
             nums = _with_dashes(nums, label, text, len(ys))
+            dashed = len(nums) == len(ys) and None in nums
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
+        # the comparative column printed as a dash: nil ("Dividends paid (42,038) -")
+        nil = dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
         if cur_f is None:
             continue                                   # nothing in the current column ("—")
         scale = 1.0 if key in PER_SHARE else (page_scale(text) if page_scale(text) != 1.0 else doc_scale)
@@ -1021,7 +1037,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             return {"id": f["id"], "value": v * scale, "display": f["display"], "page": f["page"], "concept": "", "unit": "", "scale": scale}
 
         metrics[key] = {"key": key, "kind": "ps" if key in PER_SHARE else kind, "cur": fd(cur_f),
-                        "prev": fd(prev_f) if prev_f and prev_f is not cur_f else None}
+                        "prev": fd(prev_f) if prev_f and prev_f is not cur_f else
+                        {"id": None, "value": 0.0, "display": "-", "page": cur_f["page"], "concept": "", "unit": "", "scale": scale} if nil else None}
         side = "stock" if kind == "stock" else "flow"
         if (ys or qs) and side not in head:
             head[side] = {**page_period(text), "years": ys or [y for y, _ in qs], "quarters": qs, "dates": header_dates(text, ys) if ys else []}
