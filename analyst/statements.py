@@ -179,7 +179,7 @@ STATEMENT_TITLE = re.compile(
     r"consolidated (balance sheets?|statements? of (financial (position|condition)|(\((loss|income)\) )?(operations|income|earnings)( \(loss\))?"
     r"|comprehensive (\(loss\) )?(income|loss)( \(loss\))?|cash flows?))"
     r"|statements? of ((\((loss|income)\) )?(operations|income|earnings)( \(loss\))?|cash flows?|financial position)|balance sheets?|income statements?"
-    r"|cash flows? statements?"
+    r"|cash flows? statements?|statements? of profit (or|and) loss|profit and loss (account|statement)s?"
     r"|conto economico|stato patrimoniale|rendiconto finanziario|situazione patrimoniale", re.I)
 # the words that put a title inside a sentence: "in the Consolidated Balance Sheets", "the summarized balance sheet"
 PROSE_WORD = (r"the|in|our|its|their|of|and|to|on|from|see|refer|into|within|this|these|those|accompanying|related|summarized|summary"
@@ -376,7 +376,7 @@ IS_KEYS = {"revenue", "cost_of_revenue", "gross_profit", "rnd", "opex_total", "o
            "net_income", "profit_total", "eps_diluted", "diluted_shares", "interest_expense"}
 CF_KEYS = {"cfo", "cfi", "cff", "capex", "buybacks", "dividends", "sbc", "cash_change", "fx_effect", "cash_hfs"}
 IS_TITLE = re.compile(r"statements? of (consolidated )?((\((loss|income)\) )?(operations|income|earnings)|comprehensive (\(loss\) )?(income|loss))"
-                      r"|income statements?|conto economico", re.I)
+                      r"|income statements?|statements? of profit (or|and) loss|profit and loss (account|statement)s?|conto economico", re.I)
 CF_TITLE = re.compile(r"statements? of (consolidated )?cash flows?|cash flows? statements?|rendiconto finanziario", re.I)
 BS_TITLE = re.compile(r"balance sheets?|statements? of (consolidated )?financial (position|condition)|stato patrimoniale|situazione patrimoniale", re.I)
 
@@ -385,7 +385,8 @@ def _line_rank(key: str, label: str) -> int:
     """Between two lines of the same statement: total revenue before net sales, the result attributable to
     the company before the result including minority interests."""
     if key == "revenue":
-        return 2 if label.startswith("total") else 1
+        # "Total revenues" before "Net sales"; "Total operating income" (revenue and other income, Elkem) after "Revenue"
+        return 0 if re.search(r"operating income", label) else 2 if label.startswith("total") else 1
     if key == "net_income":
         return 2 if "attributable to" in label else 1
     if key in ("cfo", "cfi", "cff"):
