@@ -492,6 +492,11 @@ def _headings(text: str):
 FIGURES = re.compile(r"\(?\d[\d,]{2,}\)?|(?<![\w.,])\(?-?\d{1,3}[.,]\d\)?(?![\d%])")
 
 
+# a subsidiary's or a note's figures in a group's report ("the main financial data for the Rottneros Group")
+SUBSIDIARY_DATA = re.compile(r"(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)"
+                             r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information", re.I)
+
+
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
@@ -871,7 +876,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         # figures in Arctic Paper's report): not the group's statement either
         q = before_of.get(p)
         tail = raw[q][-3000:] if q else (before or {}).get(p, "")      # the page before, read or not
-        if titled[p] and not title_match(raw[p][:300]) and re.search(NOT_PRIMARY, tail, re.I):
+        if titled[p] and not title_match(raw[p][:300]) and SUBSIDIARY_DATA.search(tail):
             titled[p] = 1
     kind_of = {p: page_statement(t) for p, t in page_text.items()}
     kinds = {p: page_kinds(raw[p]) | {kind_of[p]} for p in page_text}
