@@ -49,7 +49,7 @@ PATTERNS: dict[str, list[str]] = {
                    r"imposte sul reddito (dell'esercizio|del periodo) dell'operativit[aà] corrente"],
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
-                   r"profit for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
+                   r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
                    r"utile dell'esercizio"],
     "eps_diluted": [r"diluted (net )?(" + _RES + r"|eps)( per (common |ordinary )?share( of common stock)?)?( from continuing operations)?( attributable to [^,]*)?( \(.*\))?",
                     r"earnings per share[ -–—]+diluted",
@@ -107,6 +107,8 @@ SCALES = [
 
 
 def _clean(label: str) -> str:
+    # a letter or two of a vertical side heading the PDF puts before the label ("s Cash and cash equivalents", "gr Net cash …")
+    label = re.sub(r"^(?:[A-Za-z]{1,2}\s+)+(?=[A-Z][a-z])", "", label.strip())
     s = label.lower().replace("’", "'").strip(" :.,;")
     s = re.sub(r"\s*\((note|nota) ?\d+\)|\s+\d{1,2}$", "", s)        # note references
     s = re.sub(r"(?<=[a-z\)'])\((\d{1,2}|[a-h])\)|[*†‡]+", "", s)          # footnote marks: "net loss(2)", "total assets(a)"
