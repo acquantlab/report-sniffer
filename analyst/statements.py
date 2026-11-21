@@ -488,7 +488,8 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business )?segments?\b"
-               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a proportionate basis|\beliminations\b"
+               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a proportionate basis"
+               r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
                r"(?!\s+(and (its )?subsidiaries|group|consolidated))")
@@ -762,7 +763,7 @@ def _share_scale(metrics: dict) -> None:
             a["value"] = base * best
 
 
-def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
+def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict] = None) -> dict:
     """facts: [{id, label, value, display, page}] -> {"metrics", "currency", "years", "periods"} like financials.extract()."""
     # the column header, period and scale of a page are those of the statement on it, wherever it starts
     raw = page_text
@@ -841,6 +842,13 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         before = whole[max(0, i - 60):i].lower() if i > 0 else ""
         return 3 if "consolidat" in head or "consolidat" in before or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t, raw[p]) for p, t in page_text.items()}
+    for p in titled:
+        # a page that goes on from a subsidiary's or a note's data on the page before, untitled at its top (Rottneros'
+        # figures in Arctic Paper's report): not the group's statement either
+        q = before_of.get(p)
+        tail = raw[q][-3000:] if q else (before or {}).get(p, "")      # the page before, read or not
+        if titled[p] and not title_match(raw[p][:300]) and re.search(NOT_PRIMARY, tail, re.I):
+            titled[p] = 1
     kind_of = {p: page_statement(t) for p, t in page_text.items()}
     kinds = {p: page_kinds(raw[p]) | {kind_of[p]} for p in page_text}
     for p in sorted(page_text):
