@@ -617,7 +617,9 @@ PS_FIGURE = re.compile(r"\(?-?\d{1,3}\.\d{2,3}\)?")
 
 def is_per_share(f: dict) -> bool:
     """A figure printed like an amount per share: "1.94", "(0.82)", "($1.12)", "$ 3.58"."""
-    return bool(PS_FIGURE.fullmatch(re.sub(r"[$€£\s]", "", f["display"])))
+    shown = re.sub(r"[$€£\s]", "", f["display"])
+    # "4.537" read as 4,537 (a document whose thousands are dots) is an amount, not 4.537 a share
+    return bool(PS_FIGURE.fullmatch(shown)) and not (re.search(r"\.\d{3}\)?$", shown) and abs(f.get("value") or 0) >= 1000)
 
 
 def _amounts(nums: list, key: str) -> list:
