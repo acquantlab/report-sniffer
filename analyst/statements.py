@@ -827,8 +827,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         for page, *_ in cands:
             page_hits[page] = page_hits.get(page, 0) + 1
     def title_score(t: str) -> int:
-        m = title_match(t)
-        if not m:
+        m = title_match(t) or next(_titles(t, len(t)), None)   # or one further down (Arctic Paper's cash flow statement under
+        if not m:                                              # the end of its balance sheet)
             return 0
         head = t[:700].lower() + " " + m.group().lower()
         if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
