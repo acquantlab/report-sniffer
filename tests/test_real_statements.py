@@ -407,3 +407,46 @@ def test_the_dollar_sign_as_ocr_reads_it():
     words = [{"t": t, "w": 10.0} for t in ["PepsiCo", "S", "2,748S", "1,429", "§", "4,680", "S1,234", "Class", "S", "shares", "(32)S"]]
     assert [w["t"] for w in dollars(words)] == ["PepsiCo", "$", "2,748", "1,429", "$", "4,680", "$1,234", "Class", "S", "shares", "(32)"]
     assert words[2]["w"] < 10
+
+
+def test_european_amounts_dates_notes_and_percentages():
+    """ESEF reports printed to PDF (bench/esef.py): thousands set apart by a thin space ("9 118", AKVA); one amount
+    broken into touching pieces ("23,4" "79", "(77" ",573)", Luxembourg) — but not a note number next to an amount;
+    "5.045" EPS where thousands are "1,234"; dates with dots heading the columns ("31.12.23 31.12.22 30.09.23",
+    Denmark); a decimal note number ("Cost of goods sold 2.3 -618.5 -692.5") and percentages between the amounts
+    ("Gross profit 511.4 45% 555.9 45%", Finland)."""
+    def words(items):
+        return [{"t": t, "x": x0, "y": 10, "w": x1 - x0, "h": 9.2} for t, x0, x1 in items]
+    assert [w["t"] for w in generic.join_groups(words([("17", 300, 308), ("9", 380, 385), ("118", 386.5, 401.5), ("15", 440, 450),
+                                                       ("017", 451.5, 466.5)]))] == ["17", "9 118", "15 017"]
+    assert [w["t"] for w in generic.join_groups(words([("36,4", 450.0, 464.5), ("77", 464.0, 472.3), ("(77", 480, 491), (",573)", 490.3, 507.6),
+                                                       ("12", 520, 528), ("1,234", 528.5, 550)]))] == ["36,477", "(77,573)", "12", "1,234"]
+    assert generic.parse_loose("5.045", ",") == 5.045 and generic.parse_loose("5,045", ".") == 5.045
+    assert generic.parse_loose("1,234", ",") == 1234 and generic.parse_loose("(197 034)", " ") == -197034
+    assert generic.parse_loose("5.045") == 5045                     # no separator known: as before
+    head = "BALANCE SHEET\r\nINTERIM REPORT Q1 2023/24\r\nDKKm DKKm\r\nAssets 31.12.23 31.12.22 30.09.23 Equity"
+    assert S.header_years(head) == [2023, 2022, 2023] and str(S.header_dates(head, [2023, 2022, 2023])[0]) == "2023-12-31"
+    f = lambda d, v: {"display": d, "value": v}                     # noqa: E731
+    assert S._drop_note_ref([f("2.3", 2.3), f("-618.5", -618.5), f("-692.5", -692.5)], [2023, 2022], note_col=True)[0]["value"] == -618.5
+    assert S._drop_note_ref([f("2.3", 2.3), f("-618.5", -618.5), f("-692.5", -692.5)], [2023, 2022])[0]["value"] == 2.3
+    assert [x["display"] for x in S._amounts([f("511.4", 511.4), f("45%", 45), f("555.9", 555.9), f("45%", 45)], "gross_profit")] == ["511.4", "555.9"]
+    assert S.note_column("EUR million Note 2023 2022 Net sales 2.1 1,129.8 1,248.4") and not S.note_column("2023 2022 Net sales 1,129.8")
+
+
+def test_the_group_not_the_parent_and_the_scale_of_amounts_not_shares():
+    """European reports print the parent company's own statements after the group's: "Income statement - Elkem ASA"
+    is the legal entity's, "… - Elkem Group" the group's. "The accompanying Notes to the Consolidated Financial
+    Statements" is no "Note" column (Nike's EPS "3.70" is no note number). The scale is the one the page states
+    first, not one said of shares ("Amounts in DKK million … (number of shares in thousands)"). A document's
+    thousands separator is the one most of its amounts use (an Italian bank: 41 "1,234" to 4 "5.045")."""
+    import re
+    assert re.search(S.NOT_PRIMARY, "Income statement - Elkem ASA Amounts in NOK million Note 2023 2022", re.I)
+    assert not re.search(S.NOT_PRIMARY, "Consolidated income statement - Elkem Group Amounts in NOK million", re.I)
+    assert not re.search(S.NOT_PRIMARY, "Statement of cash flows - Nokia Oyj and subsidiaries EUR million", re.I)
+    assert not re.search(S.NOT_PRIMARY, "Investments in associates and joint ventures 1,234 1,100", re.I)
+    assert not S.note_column("The accompanying Notes to the Consolidated Financial Statements are an integral part. "
+                             "(In millions, except per share data) 2015 2014 2013 Revenues $ 30,601")
+    assert S.page_scale("Group Financial Highlights Amounts in DKK million Shares (number of shares in thousands)") == 1e6
+    assert S.page_scale("(In millions, except per share data; shares in thousands)") == 1e6
+    words = [{"t": t} for t in ["23,843"] * 41 + ["5.045"] * 4]
+    assert generic.thousands_sep(words) == "," and generic.thousands_sep([{"t": "1.234.567"}] * 9 + [{"t": "5,04"}]) == "."

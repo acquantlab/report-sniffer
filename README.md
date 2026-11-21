@@ -188,11 +188,12 @@ have no statements at all. McDonald's releases, whose text layer is glyph codes,
 none wrong). For the OCR measure every page is read as a picture (`FORCE_OCR=1`), at 144 dpi, without the PDF's
 text.
 
-**European reports in PDF are not yet read as well.** `bench/esef.py` prints ESEF annual reports of European companies
-(filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
-the same report tags. First measure, on 35 reports from 13 countries: 305 of 476 figures right (64%). The causes:
-scales written as "DKKm" or "EUR thousand", amounts with spaces or dots between thousands ("197 034", decimal commas),
-statements laid out in other ways. This is being worked on; until then, check European figures against their page.
+**European reports in PDF are read less well than US ones.** `bench/esef.py` prints ESEF annual reports of European
+companies (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with
+the value the same report tags. On 32 reports from 13 countries: 423 of 462 figures right (91.6%; v2.2.3: 64%). Read
+now: scales such as "DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF;
+decimal commas; dates such as "31.12.2023"; "Note" columns; the group's statements rather than the parent company's.
+Still wrong: some reports whose group and parent statements look alike. Check European figures against their page.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
@@ -406,7 +407,7 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
   equals the value filed with the SEC (see [Accuracy](#accuracy)); reports of European companies in PDF are read
-  less well for now (64% of their figures right on a first sample).
+  less well for now (91.6% of their figures right on a sample of 32).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).

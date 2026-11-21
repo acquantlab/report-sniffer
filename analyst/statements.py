@@ -137,18 +137,26 @@ _CODE = r"(?:eur|€|sek|nok|dkk|usd|chf|pln|gbp)"
 SCALES_EU = [
     (rf"(?<![\w.]){_CUR} ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
     (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}", 1e6),
-    (rf"(?<![\w.]){_CUR} ?(?:thousands?|['’]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
-     rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)", 1e3),
+    (rf"(?<![\w.]){_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
+     rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b", 1e3),
 ]
 
 
+def shares_only(before: str) -> bool:
+    """A scale said of shares alone ("(number of shares in thousands)"), not of amounts too ("Dollars and shares in
+    millions", McDonald's)."""
+    return bool(re.search(r"shares?\b[^,;()]{0,15}$", before)) and not re.search(r"(dollars|amounts|\$|€|£|\b(eur|usd|dkk|sek|nok))[^,;()]*$", before)
+
+
 def page_scale(text: str) -> float:
+    """The scale the page states for its amounts: the first one it prints, not one said of shares ("Amounts in DKK
+    million … (number of shares in thousands)")."""
     t = text.lower()
-    for pat, k in SCALES:
-        if re.search(pat, t):
-            return k
-    hits = [(m.start(), k) for pat, k in SCALES_EU for m in [re.search(pat, t)] if m]
-    return min(hits)[1] if hits else 1.0
+
+    def first(pats):
+        hits = [(m.start(), k) for pat, k in pats for m in re.finditer(pat, t) if not shares_only(t[max(0, m.start() - 40):m.start()])]
+        return min(hits)[1] if hits else None
+    return first(SCALES) or first(SCALES_EU) or 1.0
 
 
 def page_currency(text: str) -> str:
@@ -245,6 +253,9 @@ def header_dates(text: str, years: list[int]) -> list:
     """The full date of each column when the header prints it ("June 2, 2023  December 2, 2022")."""
     from datetime import date
     import calendar
+    dots = dot_dates(text)
+    if dots and [d.year for d in dots] == years:
+        return dots
     out = []
     for m in DATE_RE.finditer(text[:2500]):
         mo = MONTH_NO[m.group(1).lower()[:3]]
@@ -276,9 +287,33 @@ def header_dates(text: str, years: list[int]) -> list:
         return []
 
 
+# a date written with dots, as European reports head their columns ("31.12.2023", "31.12.23"); with slashes the year
+# is seen by YEAR already
+DOT_DATE = re.compile(r"(?<![\d.,])(\d{1,2})\.(\d{1,2})\.((?:19|20)?\d\d)(?![\d,]|\.\d)")
+
+
+def dot_dates(text: str) -> list:
+    """The dates of a line of the header written with dots, when it has two or more years: "31.12.23 31.12.22 30.09.23"."""
+    from datetime import date
+    for line in text[:2500].splitlines():
+        out = []
+        for m in DOT_DATE.finditer(line):
+            d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            try:
+                out.append(date(y + 2000 if y < 100 else y, mo, d))
+            except ValueError:
+                pass
+        if len(out) >= 2 and len({x.year for x in out}) > 1:
+            return out
+    return []
+
+
 def header_years(text: str) -> list[int]:
     """The years heading the columns, in their order: the first run of two or more different years printed close
-    together ("2017 2018 2019", "June 30, 2023 July 1, 2022", "2023 2022 2023 2022")."""
+    together ("2017 2018 2019", "June 30, 2023 July 1, 2022", "2023 2022 2023 2022"; "31.12.23 31.12.22")."""
+    dots = dot_dates(text)
+    if dots:
+        return [d.year for d in dots]
     # a line made of years is the column header, even under a dateline that names them too
     # ("Fiscal years ended December 31, 2022, December 25, 2021 and …" / "2022 2021 2020")
     for line in text[:2500].splitlines():
@@ -441,8 +476,17 @@ def _headings(text: str):
 
 
 # statements that are not the group's own: the parent company alone, guarantor / consolidating columns
+# the amounts on a page: three or more digits ("1,234", "(567)"), or one decimal ("79.7", "-618.5", "€ million" reports),
+# not a percentage
+FIGURES = re.compile(r"\(?\d[\d,]{2,}\)?|(?<![\w.,])\(?-?\d{1,3}[.,]\d\)?(?![\d%])")
+
+
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
-               r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b")
+               r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
+               r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|\beliminations\b"
+               # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
+               r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
+               r"(?!\s+(and (its )?subsidiaries|group|consolidated))")
 
 
 BOILERPLATE = re.compile(r"(the |see )?(accompanying )?notes to (the )?(consolidated )?financial statements are an integral part of (these|this)"
@@ -466,7 +510,7 @@ def _continues(text: str) -> bool:
         label = re.split(r"\s[(\$—–-]*\d", line, maxsplit=1)[0]
         if label != line and match(label):
             rows += 1
-    return rows >= 2 and len(re.findall(r"\(?\d[\d,]{2,}\)?", text)) >= 12
+    return rows >= 2 and len(FIGURES.findall(text)) >= 12
 
 
 def statement_pages(texts: list[str]) -> list[int]:
@@ -487,39 +531,43 @@ def statement_pages(texts: list[str]) -> list[int]:
         if not title or not (HEADER_NEAR.search(t[title.end():title.end() + 300]) or header_years(t[title.end():title.end() + 300])
                              or title.start() > len(t) - 250):
             continue                                   # a title with its column header under it, not a mention
-        figs = len(re.findall(r"\(?\d[\d,]{2,}\)?", t))
+        figs = len(FIGURES.findall(t))
         if figs < 12:
             continue
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250
+        cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I))
         rank = (not re.search(NOT_PRIMARY, head, re.I), top, "consolidat" in (head + " " + title.group()).lower(),
-                not re.search(r"comprehensive", head, re.I), figs)
-        if kind not in best or rank > best[kind][0]:
+                not re.search(r"comprehensive", head, re.I), not cond, figs)
+        # alike, the earlier one: a report prints the group's statements before the parent company's (VERBUND: 54 and 63
+        # figures), unless the later one is much fuller (the statement after a table of contents naming it: 20 and 39)
+        if kind not in best or rank[:5] > best[kind][0][:5] or (rank[:5] == best[kind][0][:5] and 0.7 * figs > best[kind][0][5]):
             best[kind] = (rank, i)
-        if kind not in first or rank[:4] > first[kind][0]:
-            first[kind] = (rank[:4], i)
+        if kind not in first or rank[:5] > first[kind][0]:
+            first[kind] = (rank[:5], i)
     foot = set()
     for i, t in enumerate(texts[:-1]):
         # a title at the foot of a page with the statement itself on the next one ("Consolidated Statements of Cash
         # Flows  $ in millions" / the columns overleaf)
         title = title_match(t)
         kind = page_statement(t)
-        if kind and title and title.start() > len(t) - 300 and len(re.findall(r"\(?\d[\d,]{2,}\)?", t)) < 12 and _continues(texts[i + 1]):
+        if kind and title and title.start() > len(t) - 300 and len(FIGURES.findall(t)) < 12 and _continues(texts[i + 1]):
             rank = (not re.search(NOT_PRIMARY, t[:300], re.I), True, "consolidat" in t[max(0, title.start() - 60):title.end()].lower(),
-                    not re.search(r"comprehensive", title.group(), re.I), len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])))
+                    not re.search(r"comprehensive", title.group(), re.I),
+                    not re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I), len(FIGURES.findall(texts[i + 1])))
             if kind not in best or rank > best[kind][0]:
                 best[kind] = (rank, i + 1)
                 foot.add(i)
-            if kind not in first or rank[:4] > first[kind][0]:
-                first[kind] = (rank[:4], i + 1)
+            if kind not in first or rank[:5] > first[kind][0]:
+                first[kind] = (rank[:5], i + 1)
                 foot.add(i)
     pages = {i for _, i in best.values()} | {i for _, i in first.values()}
     pages |= {i for i in foot if i + 1 in pages}
     # the statement's next page, titled again ("… (continued)", or the title the PDF gives last)
     pages |= {i + 1 for i in pages if i + 1 < len(texts) and page_statement(texts[i + 1]) == page_statement(texts[i])
               and (re.search(r"continued", texts[i + 1][:300], re.I) or not re.search(r"comprehensive", (title_match(texts[i + 1]) or [""])[0], re.I))
-              and len(re.findall(r"\(?\d[\d,]{2,}\)?", texts[i + 1])) >= 12}
+              and len(FIGURES.findall(texts[i + 1])) >= 12}
     # a statement that goes on over the next page (its totals there), past a blank page
     nxt = {}
     for i in pages:
@@ -534,13 +582,18 @@ def statement_pages(texts: list[str]) -> list[int]:
 def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     """A note number ("4") or a footnote mark the PDF prints apart from the label ("(2)"); under a "Note" column
     header, a note in parentheses too ("(16)", European reports) — elsewhere that is an amount (Pfizer's tax "(71)")."""
-    return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)" if note_col else ""), f["display"].strip()))
+    return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}" if note_col else ""), f["display"].strip()))
+
+
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+                       r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
 def note_column(text: str) -> bool:
-    """A page whose column header, above its first amount, names a "Note" column."""
-    first = re.search(r"\d,\d{3}", text)
-    return bool(re.search(r"\bnotes?\b", text[:first.start() if first else 600][-300:], re.I))
+    """A page whose column header, above its first amount, names a "Note" column ("EUR million Note 2023 2022",
+    "Note 31.12.2023"); not "The accompanying Notes to the Consolidated Financial Statements" (Nike)."""
+    first = re.search(r"\d[,.]\d{3}|\d \d{3}(?!\d)", text)              # the first amount, not "2023 2022"
+    return bool(NOTE_HEAD.search(text[:first.start() if first else 600][-300:]))
 
 
 def _drop_note_ref(nums: list, years: list, note_col: bool = False) -> list:
@@ -568,10 +621,15 @@ def _amounts(nums: list, key: str) -> list:
     per_share = [f for f in nums if is_per_share(f)]
     if per_share and len(per_share) < len(nums):
         nums = per_share if key in PER_SHARE else [f for f in nums if f not in per_share]
-    if key in PER_SHARE or len(nums) < 3:
+    if key in PER_SHARE:
+        return nums
+    marked = [f for f in nums if f["display"].strip().endswith("%")]
+    if marked and len(marked) < len(nums):
+        nums = [f for f in nums if f not in marked]       # "Gross profit 511.4 45% 555.9 45%"
+    if len(nums) < 3:
         return nums
     pct = [f for f in nums if re.fullmatch(r"\(?-?\d{1,3}\.\d\)?%?", f["display"].strip("$ ")) and abs(f["value"]) <= 100]
-    if pct and len(pct) < len(nums) and all(re.search(r"\d,\d{3}|^\(?\$?\s?\d+\)?$", f["display"].strip()) for f in nums if f not in pct):
+    if pct and len(pct) < len(nums) and all(re.search(r"\d[, ]\d{3}|^\(?\$?\s?\d+\)?$", f["display"].strip()) for f in nums if f not in pct):
         return [f for f in nums if f not in pct]
     return nums
 
@@ -613,10 +671,10 @@ def _right(f: dict) -> float:
     return f["x1"] - (3.5 if f["display"].rstrip().endswith(")") else 0)
 
 
-def page_columns(facts: list[dict]) -> list[float]:
+def page_columns(facts: list[dict], note_col: bool = False) -> list[float]:
     """The columns of amounts on a PDF page: where the formatted amounts end, grouped (left to right). A column of
     percentages ("Percent to Sales", "% Change": one decimal, no thousands) is not one of them."""
-    fs = sorted((f for f in facts if "x1" in f and re.search(r"\d,\d{3}|\(\d|\d\.\d", f["display"])), key=_right)
+    fs = sorted((f for f in facts if "x1" in f and re.search(r"\d[, ]\d{3}|\(\d|\d[.,]\d", f["display"])), key=_right)
     groups: list[list[dict]] = []
     for f in fs:
         if groups and _right(f) - _right(groups[-1][-1]) <= 8:
@@ -628,8 +686,10 @@ def page_columns(facts: list[dict]) -> list[float]:
         one = sum(1 for f in g if re.fullmatch(r"\(?-?\d{1,3}\.\d\)?%?", f["display"].strip("$ ")))
         return one >= 0.8 * len(g)
 
-    def notes(g):                                  # a "Note" column: "(12)", "(16)" (European reports)
-        return all(re.fullmatch(r"\(\d{1,2}\)", f["display"].strip()) for f in g)
+    def notes(g):                                  # a "Note" column: "(12)", "(16)"; "2.3" under a "Note" header (European reports)
+        return all(re.fullmatch(r"\(\d{1,2}\)", f["display"].strip()) for f in g) \
+            or (note_col and g is first and all(re.fullmatch(r"\(?\d{1,2}(\.\d{1,2})?\)?", f["display"].strip()) for f in g))
+    first = next((g for g in groups if len(g) >= 3), None)
     return [_right(sorted(g, key=_right)[len(g) // 2]) for g in groups if len(g) >= 3 and not percent(g) and not notes(g)]
 
 
@@ -725,8 +785,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
     groups: dict[tuple[int, str], list[dict]] = {}
     for f in facts:
         groups.setdefault((f["page"], f["label"]), []).append(f)
-    cols = {p: page_columns([f for f in facts if f["page"] == p]) for p in page_text}
     note_col = {p: note_column(t) for p, t in page_text.items()}
+    cols = {p: page_columns([f for f in facts if f["page"] == p], note_col[p]) for p in page_text}
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
@@ -769,7 +829,8 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         head = t[:700].lower() + " " + m.group().lower()
         if re.search(NOT_PRIMARY, head, re.I):
             return 1
-        return 3 if "consolidated" in head or "consolidat" in head else 2
+        # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
+        return 3 if "consolidat" in head or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t) for p, t in page_text.items()}
     kind_of = {p: page_statement(t) for p, t in page_text.items()}
     kinds = {p: page_kinds(raw[p]) | {kind_of[p]} for p in page_text}
@@ -816,6 +877,12 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
                 cands = [c for c in cands if not 0 < year_of[c[0]] < top_year]  # not an investee's older statements
                 if not cands:
                     continue
+            if not cands:
+                continue
+        else:
+            # no statement titled as such: not from the parent company's statements either (AKVA, whose group
+            # statements did not print as text): a line not read rather than the parent's figure as the group's
+            cands = [c for c in cands if not re.search(NOT_PRIMARY, raw[c[0]][:900], re.I)]
             if not cands:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],

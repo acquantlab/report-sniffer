@@ -43,12 +43,24 @@ MAX_OCR_PAGES = 400             # pages read with OCR (about 1-2 s each)
 MAX_FACTS_PAGE = 400
 
 
-def parse_loose(t: str) -> Optional[float]:
+def parse_loose(t: str, sep: Optional[str] = None) -> Optional[float]:
+    """A printed amount as a number; sep, the document's thousands separator when known, settles "5.045" and "5,045"."""
     s = t.strip().replace("−", "-").replace("–", "-").replace("’", "").replace("'", "").replace(" ", "").replace(" ", "")
     neg = s.startswith("(") or s.startswith("-")         # "(2,597)", also when the PDF splits off the ")"
     s = re.sub(r"[^\d.,]", "", s)
     if not s or not any(c.isdigit() for c in s):
         return None
+    if sep and ("," in s) != ("." in s):
+        mark = "," if "," in s else "."
+        if mark != sep:                                   # the decimal mark: "5.045" where thousands are "1,234"
+            s = s.replace(mark, ".") if s.count(mark) == 1 else s.replace(mark, "")
+        else:
+            s = s.replace(mark, "")
+        try:
+            v = float(s)
+        except ValueError:
+            return None
+        return -v if neg else v
     if "," in s and "." in s:
         dec = "," if s.rfind(",") > s.rfind(".") else "."
         s = s.replace("." if dec == "," else ",", "").replace(",", ".")
@@ -207,14 +219,15 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, on_ocr=None) -> dict:
     pages_words = {}
     for i in chosen:
         if i in ocr_words:
-            pages_words[i] = ocr_words[i]
+            pages_words[i] = join_groups(ocr_words[i])
             continue
         page = pdf[i]
         tp = page.get_textpage()
-        pages_words[i] = _words(tp, sizes[i][1])
+        pages_words[i] = join_groups(_words(tp, sizes[i][1]))
         tp.close()
         page.close()
 
+    sep = thousands_sep([w for ws in pages_words.values() for w in ws])
     img_dir.mkdir(parents=True, exist_ok=True)
     out_pages, facts, headings, page_text = [], [], [], []
     for i in chosen:
@@ -223,7 +236,7 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, on_ocr=None) -> dict:
         bmp = pdf[i].render(scale=2.0)
         bmp.to_pil().convert("RGB").save(img_dir / f"p{i + 1}.jpg", quality=88)   # JPEG: ~50x faster than PNG
         words = pages_words[i]
-        figs = {} if i in bad else {id(f["word"]): f for f in _label_figures(words)}
+        figs = {} if i in bad else {id(f["word"]): f for f in _label_figures(words, sep)}
         keep = sorted(figs.values(), key=lambda f: -f["score"])[:MAX_FACTS_PAGE]
         keep_ids = {id(f["word"]) for f in keep}
         hsize = median([wd["h"] for wd in words]) if words else 10
@@ -379,6 +392,57 @@ def _words(tp, page_h: float) -> list[dict]:
     return words
 
 
+def join_groups(words: list[dict]) -> list[dict]:
+    """Amounts whose thousands are set apart by a (thin) space, as European reports print them ("9 118", "(197 034)",
+    "1 234 567,8"), as one word: two words on a line, the first of one to three digits (or a group already joined), the
+    second of three digits, closer than a word space. Columns of amounts lie much further apart."""
+    out: list[dict] = []
+    for wd in words:
+        if out:
+            a = out[-1]
+            gap = wd["x"] - (a["x"] + a["w"])
+            same_line = abs((a["y"] + a["h"] / 2) - (wd["y"] + wd["h"] / 2)) < 0.4 * min(a["h"], wd["h"])
+            h = max(a["h"], wd["h"])
+            joined = None
+            if same_line and -1.5 <= gap <= 0.12 * h and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
+                    and AMOUNT.fullmatch(a["t"] + wd["t"]) and (_open(a["t"]) or re.match(r"[,.]", wd["t"]) or wd["t"].count(")") > wd["t"].count("(")):
+                joined = a["t"] + wd["t"]                 # one amount the PDF breaks into touching pieces ("23,4" "79")
+            elif same_line and -1 <= gap <= 0.33 * h and re.fullmatch(r"[(\-−–]?[€$£]?\d{1,3}( \d{3})*", a["t"]) \
+                    and re.fullmatch(r"\d{3}([.,]\d+)?\)?%?", wd["t"]):
+                joined = a["t"] + " " + wd["t"]
+            if joined:
+                out[-1] = {**a, "t": joined, "w": wd["x"] + wd["w"] - a["x"],
+                           "y": min(a["y"], wd["y"]), "h": max(a["y"] + a["h"], wd["y"] + wd["h"]) - min(a["y"], wd["y"])}
+                continue
+        out.append(wd)
+    return out
+
+
+def _open(t: str) -> bool:
+    """The first piece of a broken amount: "23,4", "94,", "(77" — not a whole number ("12" before "1,234")."""
+    return bool(re.search(r"[,.]\d{0,2}$", t)) or t.count("(") > t.count(")")
+
+
+AMOUNT = re.compile(r"[(\-−–]?[€$£]?(\d{1,3}(,\d{3})+|\d{1,3}(\.\d{3})+|\d+)([.,]\d+)?\)?%?")
+
+
+def thousands_sep(words: list[dict]) -> Optional[str]:
+    """How a document groups thousands: "," (1,234.5), "." (1.234,5) or " " (1 234,5), when most of its amounts say
+    so (five to one); then "5.045" is 5.045 in the first and "5,045" is 5.045 in the others."""
+    n = {",": 0, ".": 0, " ": 0}
+    for w in words:
+        t = w["t"].strip("()-−–$€£%")
+        if re.fullmatch(r"\d{1,3}(,\d{3})+(\.\d+)?", t):
+            n[","] += 1
+        elif re.fullmatch(r"\d{1,3}(\.\d{3})+(,\d+)?", t):
+            n["."] += 1
+        elif re.fullmatch(r"\d{1,3}( \d{3})+([.,]\d+)?", t):
+            n[" "] += 1
+    best = max(n, key=n.get)
+    others = sum(v for k, v in n.items() if k != best)
+    return best if n[best] >= 8 and n[best] >= 5 * others else None
+
+
 def _lines(words: list[dict]) -> list[list[dict]]:
     lines: list[list[dict]] = []
     for wd in sorted(words, key=lambda w: (round(w["y"] + w["h"] / 2), w["x"])):
@@ -395,7 +459,7 @@ def _lines(words: list[dict]) -> list[list[dict]]:
     return lines
 
 
-def _label_figures(words: list[dict]) -> list[dict]:
+def _label_figures(words: list[dict], sep: Optional[str] = None) -> list[dict]:
     out = []
     lines = _lines(words)
     # the page's columns of amounts: where the formatted amounts end (their right edges, a ")" aside)
@@ -403,7 +467,7 @@ def _label_figures(words: list[dict]) -> list[dict]:
         return w["x"] + w["w"] - (3.5 if w["t"].endswith(")") else 0)
 
     groups: list[list[float]] = []
-    for e in sorted(edge(w) for ln in lines for w in ln if is_figure(w["t"]) and re.search(r"\d[.,]\d", w["t"])):
+    for e in sorted(edge(w) for ln in lines for w in ln if is_figure(w["t"]) and re.search(r"\d[., ]\d", w["t"])):
         if groups and e - groups[-1][-1] <= 8:
             groups[-1].append(e)
         else:
@@ -417,7 +481,7 @@ def _label_figures(words: list[dict]) -> list[dict]:
         # a 1-2 digit number in front of a row of formatted amounts is a note reference, not a figure;
         # between the amounts it is one ("Net income  $ (6,841)  $ 78  $ (5,865)"), and so it is in the column of
         # the amounts ("Net increase in cash  62  2,962  (3,241)", "… on cash  9  (52)  (51)")
-        amount_x = [w["x"] for w in ln if is_figure(w["t"]) and re.search(r"\d[.,]\d", w["t"])]
+        amount_x = [w["x"] for w in ln if is_figure(w["t"]) and re.search(r"\d[., ]\d", w["t"])]
         for k, wd in enumerate(ln):
             if not is_figure(wd["t"], allow_digit=True):
                 continue
@@ -456,7 +520,7 @@ def _label_figures(words: list[dict]) -> list[dict]:
                 head = " ".join(parts)
                 if parts and len(head) <= 140 and head[:1].isupper():
                     label = unsplit(head + " " + label)
-            v = parse_loose(wd["t"])
+            v = parse_loose(wd["t"], sep)
             if v is None:
                 continue
             sc = score_label(label)
