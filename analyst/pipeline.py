@@ -374,7 +374,9 @@ def _enough(m: dict) -> bool:
 
 def _statement_metrics(g: dict) -> Optional[dict]:
     texts = {p["n"]: t for p, t in zip(g["pages"], g["page_text"])}
-    x = statements.extract(g["facts"], texts)
+    every = g.get("all_text") or []
+    before = {p["n"]: every[p["n"] - 2][-3000:] for p in g["pages"] if 1 < p["n"] <= len(every) + 1}
+    x = statements.extract(g["facts"], texts, before)
     if not _enough(x["metrics"]):
         return None
     return x
