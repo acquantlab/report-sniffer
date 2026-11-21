@@ -827,8 +827,10 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
         if not m:
             return 0
         head = t[:700].lower() + " " + m.group().lower()
-        if re.search(NOT_PRIMARY, head, re.I):
+        if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
             return 1
+        if len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5:
+            return 1                       # amounts to the cent ("32,298,207.32"): a company's statutory accounts, not the group's
         # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
         return 3 if "consolidat" in head or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t) for p, t in page_text.items()}
