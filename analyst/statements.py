@@ -1017,8 +1017,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             nums = _with_dashes(nums, label, text, len(ys))
             dashed = len(nums) == len(ys) and None in nums
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
-        # the comparative column printed as a dash: nil ("Dividends paid (42,038) -")
-        nil = dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
+        # the comparative column printed as a dash: nil ("Dividends paid (42,038) -"), for a payment not made every year;
+        # elsewhere a dash read there can be another line's (Foot Locker's FX effect, a Swedish MD&A table)
+        nil = key in ("dividends", "buybacks") and dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
         if cur_f is None:
             continue                                   # nothing in the current column ("—")
         scale = 1.0 if key in PER_SHARE else (page_scale(text) if page_scale(text) != 1.0 else doc_scale)
