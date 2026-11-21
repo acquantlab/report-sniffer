@@ -40,6 +40,7 @@ PATTERNS: dict[str, list[str]] = {
     "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",
                       r"(income|earnings|profit|loss|\(loss\) income|income \(loss\))( \(loss\))? from continuing operations before (provision|\(?benefit|income tax|tax).*",
+                      _RESULT + r" before (income )?tax(es)? from continuing operations",
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
     "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income",
                    r"(income )?tax (expense|provision|benefit)( \(benefit\)| \(expense\))?",
@@ -50,7 +51,7 @@ PATTERNS: dict[str, list[str]] = {
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
-                   r"utile dell'esercizio"],
+                   r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)"],
     "eps_diluted": [r"diluted (net )?(" + _RES + r"|eps)( per (common |ordinary )?share( of common stock)?)?( from continuing operations)?( attributable to [^,]*)?( \(.*\))?",
                     r"earnings per share[ -–—]+diluted",
                     r"(?=.*diluted)(basic and diluted )?net " + _RES + r" per (common |ordinary )?share.*",
@@ -394,7 +395,7 @@ def _line_rank(key: str, label: str) -> int:
         # "Total revenues" before "Net sales"; "Total operating income" (revenue and other income, Elkem) after "Revenue"
         return 0 if re.search(r"operating income", label) else 2 if label.startswith("total") else 1
     if key == "net_income":
-        return 2 if "attributable to" in label else 1
+        return 2 if "attributable to" in label or label.startswith("parent company's") else 1
     if key in ("cfo", "cfi", "cff"):
         # the total before its continuing-operations part; IFRS "cash generated from operations" is before interest and taxes
         return (2 if "activities" in label and not label.startswith("cash generated") else 1) * 2 - ("continuing operations" in label)
