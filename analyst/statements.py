@@ -489,6 +489,7 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business )?segments?\b"
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a proportionate basis"
+               r"|\breclassified (consolidated )?(income statement|balance sheet|statement|accounts)|riclassificat"
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
@@ -591,7 +592,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}|\d{1,2}(,\s?\d{1,2})+" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}/\d{1,2}\s*-\s*)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
