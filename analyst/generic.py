@@ -536,7 +536,12 @@ def _label_figures(words: list[dict], sep: Optional[str] = None) -> list[dict]:
                         break
                 head = " ".join(parts)
                 if parts and len(head) <= 140 and head[:1].isupper():
-                    label = unsplit(head + " " + label)
+                    from . import statements
+                    joined = unsplit(head + " " + label)
+                    # not when the line alone is a statement line and joined it is not ("… net investment in" /
+                    # "Operating profit (loss)", a heading over "Earnings per share (EPS), diluted, EUR")
+                    if not (statements.match(label) and not statements.match(joined)):
+                        label = joined
             v = parse_loose(wd["t"], sep)
             if v is None:
                 continue
