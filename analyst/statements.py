@@ -45,7 +45,7 @@ PATTERNS: dict[str, list[str]] = {
                       r"(income|profit|result|earnings) after financial (items|net)",   # Swedish reports: before taxes
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
     "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income",
-                   r"(income )?tax (expense|provision|benefit)( \(benefit\)| \(expense\))?",
+                   r"(income )?tax (expenses?|provision|benefit)( \(benefit\)| \(expense\))?",
                    r"(provision|benefit) ?/ ?\(?(benefit|provision)\)? for (income )?taxes( on income)?",
                    # Italian banks (Bank of Italy Circular 262): "300. Tax expenses (income) of the year from continuing operations"
                    r"tax(es)? expenses? \(income\)( (of|for) the (year|period))?( from continuing operations)?",
@@ -53,7 +53,8 @@ PATTERNS: dict[str, list[str]] = {
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
-                   r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)"],
+                   r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
+                   r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?"],
     "eps_diluted": [r"diluted (net )?(" + _RES + r"|eps)( per (common |ordinary )?share( of common stock)?)?( from continuing operations)?( attributable to [^,]*)?( \(.*\))?",
                     r"earnings per share[ -–—]+diluted",
                     r"(?=.*diluted)(basic and diluted )?net " + _RES + r" per (common |ordinary )?share.*",
@@ -148,7 +149,7 @@ _CODE = r"(?:eur|€|sek|nok|dkk|usd|chf|pln|gbp)"
 SCALES_EU = [
     (rf"(?<![\w.]){_CUR} ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
     (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}", 1e6),
-    (rf"(?<![\w.]){_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
+    (rf"(?<![\w.])(?:in)?{_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
      rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b", 1e3),
 ]
 
@@ -503,8 +504,8 @@ SUBSIDIARY_DATA = re.compile(r"(main|key|summari[sz]ed|summary) financial (data|
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
-               r"|results? of the segments?\b|\bby (operating |business )?segments?\b"
-               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a proportionate basis"
+               r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
+               r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
@@ -560,7 +561,8 @@ def statement_pages(texts: list[str]) -> list[int]:
         # note or the MD&A has text above it
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250
         cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I))
-        rank = (not re.search(NOT_PRIMARY, head, re.I), top, "consolidat" in (head + " " + title.group()).lower(),
+        cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
+        rank = (not re.search(NOT_PRIMARY, head, re.I) and not cents, top, "consolidat" in (head + " " + title.group()).lower(),
                 not re.search(r"comprehensive", head, re.I), not cond, figs)
         # alike, the earlier one: a report prints the group's statements before the parent company's (VERBUND: 54 and 63
         # figures), unless the later one is much fuller (the statement after a table of contents naming it: 20 and 39)
