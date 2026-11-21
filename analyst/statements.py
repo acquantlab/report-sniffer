@@ -589,7 +589,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
@@ -862,7 +862,7 @@ def extract(facts: list[dict], page_text: dict[int, str]) -> dict:
 
     def condensed(t: str) -> bool:
         m = title_match(t)
-        return bool(m and re.search(r"condensed", t[max(0, m.start() - 60):m.end()], re.I))
+        return bool(m and re.search(r"condensed", t[max(0, m.start() - 60):m.end() + 40], re.I))   # "Balance sheet condensed by main items"
     cond = {p: condensed(t) for p, t in page_text.items()}
     # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
     scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
