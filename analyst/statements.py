@@ -76,7 +76,7 @@ PATTERNS: dict[str, list[str]] = {
             r"cash (flows? )?(generated )?from operating activities", r"cash generated from operations",
             r"flusso di cassa (netto )?(generato )?(da|dalle|dell'|delle) attivit[aà] operativ[ae]", r"flussi di cassa (netti )?(da|dalle) attivit[aà] operative"],
     "cfi": [_CF + r"investing( activities)?( (of|from) continuing operations)?",
-            r"cash (flows? )?(used in|from) investing activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di investimento"],
+            r"cash (flows? )?(used in|from) investing activities", r"cash flows? from \(used in\) investment activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di investimento"],
     "cff": [_CF + r"financing( activities)?( (of|from) continuing operations)?",
             r"cash (flows? )?(used in|from) financing activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di finanziamento"],
     "fx_effect": [r"effects? of (foreign )?(currency )?exchange( rate)?( changes| fluctuations| rate changes)? on cash.*", r"effects? of exchange rate (changes|fluctuations).*", r"effects? of (changes in )?(foreign )?(currency )?exchange rates?.*",
@@ -111,6 +111,7 @@ def _clean(label: str) -> str:
     label = re.sub(r"^(?:[A-Za-z]{1,2}\s+)+(?=[A-Z][a-z])", "", label.strip())
     s = label.lower().replace("’", "'").strip(" :.,;")
     s = re.sub(r"\s*\((note|nota) ?\d+\)|\s+\d{1,2}$", "", s)        # note references
+    s = re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s)                  # "Revenue Notes 6 y 18", its numbers read as figures
     s = re.sub(r"(?<=[a-z\)'])\((\d{1,2}|[a-h])\)|[*†‡]+", "", s)          # footnote marks: "net loss(2)", "total assets(a)"
     s = re.sub(r"\s\(([a-h]|\d{1,2})\)$", "", s)                            # "cost of sales (a)"
     s = re.sub(r"^(voce |item )?\d{1,3}(\.|\))\s*|^(voce |item )?\d{1,3}\s+|^[a-z]\)\s+", "", s)  # line numbers: "120. margine di intermediazione"
