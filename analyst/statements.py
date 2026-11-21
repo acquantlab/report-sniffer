@@ -109,6 +109,8 @@ SCALES = [
 def _clean(label: str) -> str:
     # a letter or two of a vertical side heading the PDF puts before the label ("s Cash and cash equivalents", "gr Net cash …")
     label = re.sub(r"^(?:[A-Za-z]{1,2}\s+)+(?=[A-Z][a-z])", "", label.strip())
+    # a heading in capitals the PDF puts on the line ("CONSOLIDATED FINANCIAL STATEMENTS Earnings per share (EPS), diluted")
+    label = re.sub(r"^(?:[A-Z]{2,}\s+){2,}(?=[A-Z][a-z])", "", label)
     s = label.lower().replace("’", "'").strip(" :.,;")
     s = re.sub(r"\s*\((note|nota) ?\d+\)|\s+\d{1,2}$", "", s)        # note references
     s = re.sub(r"(?<=[a-z\)'])\((\d{1,2}|[a-h])\)|[*†‡]+", "", s)          # footnote marks: "net loss(2)", "total assets(a)"
