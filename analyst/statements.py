@@ -76,7 +76,7 @@ PATTERNS: dict[str, list[str]] = {
             r"cash (flows? )?(generated )?from operating activities", r"cash generated from operations",
             r"flusso di cassa (netto )?(generato )?(da|dalle|dell'|delle) attivit[aà] operativ[ae]", r"flussi di cassa (netti )?(da|dalle) attivit[aà] operative"],
     "cfi": [_CF + r"investing( activities)?( (of|from) continuing operations)?",
-            r"cash (flows? )?(used in|from) investing activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di investimento"],
+            r"cash (flows? )?(used in|from) investing activities", r"cash flows? from \(used in\) investment activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di investimento"],
     "cff": [_CF + r"financing( activities)?( (of|from) continuing operations)?",
             r"cash (flows? )?(used in|from) financing activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di finanziamento"],
     "fx_effect": [r"effects? of (foreign )?(currency )?exchange( rate)?( changes| fluctuations| rate changes)? on cash.*", r"effects? of exchange rate (changes|fluctuations).*", r"effects? of (changes in )?(foreign )?(currency )?exchange rates?.*",
@@ -129,9 +129,10 @@ def match(label: str) -> Optional[str]:
     s = _clean(label)
     if not s:
         return None
-    for key, pats in _COMPILED.items():
-        if any(p.match(s) for p in pats):
-            return key
+    for cand in (s, re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s)):    # or without a "Notes 6 y 18" column word
+        for key, pats in _COMPILED.items():
+            if any(p.match(cand) for p in pats):
+                return key
     return None
 
 

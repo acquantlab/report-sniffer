@@ -242,7 +242,10 @@ def read(doc: str):
         for line in t.splitlines():
             label = re.split(r"\s[(\$—–-]*\d", line, maxsplit=1)[0]
             # not a guarantor table's row (parent, guarantors, others, eliminations, total: five columns or more)
-            if label != line and len(re.findall(r"\(?\d[\d,]*\)?", line[len(label):])) <= 4:
+            rest = line[len(label):]
+            # printed with an amount, not a note number alone (an ESEF print that lost the figures of a column: ASML)
+            amount = re.search(r"\d[,. ]\d{3}|\d[.,]\d|\d{3}", rest)
+            if label != line and amount and len(re.findall(r"\(?\d[\d,]*\)?", rest)) <= 4:
                 k = statements.match(label)
                 if k and statements.statement_of(k) in kinds:
                     printed.add(k)
