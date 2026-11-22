@@ -200,6 +200,6 @@ def test_a_dash_keeps_the_amounts_in_their_own_columns(no_ai, tmp_path):
     data = _pdf(tmp_path / "k.pdf", [[(50, 740, "Example Streaming, Inc.", True, False)], cf])
     a = pipeline.run({"kind": "upload", "data": data, "name": "k.pdf", "lang": "en"}, lambda *_: None)
     m = a["fin"]["metrics"]
-    assert "buybacks" not in m
+    assert m["buybacks"]["cur"] == 0 and m["buybacks"]["prev"] == 600_022_000     # none in 2022: the dash
     assert m["dividends"]["cur"] == 10_000_000 and not m["dividends"]["prev"]
     assert m["capex"]["cur"] == 407_729_000 and m["capex"]["prev"] == 524_585_000

@@ -94,8 +94,8 @@ PATTERNS: dict[str, list[str]] = {
               r"(property|premises|land|plant|fixed assets|buildings|capital assets)\b(?!.*(held for sale|proceeds)).*",
               r"(property|premises|land|plant|fixed assets|buildings)[\w ,]*? (additions|purchases|acquisitions|expenditures)",
               r"capital (expenditures?|spending)(,? (net|excluding|including) .*| \(.*\))?", r"investimenti in immobilizzazioni materiali", r"acquisti? di immobili,? impianti e macchinari"],
-    "sbc": [r"(total )?(stock|share|equity)[- ]based (compensation|payments?|awards?)( expense)?( \(.*\))?", r"(costi|compensi) (per pagamenti )?basati su azioni"],
-    "buybacks": [r"(payments for )?(repurchases?|purchases?) of ([\w&.'’-]+ ){0,4}?(common |ordinary |treasury |company )?(stock|shares)( for treasury| and other| - common)?", r"(anti-?dilutive )?share (buy-?backs?|repurchases?)( - common)?(.*cancellations?)?",
+    "sbc": [r"(total )?(stock|share|equity)[- ]based (compensation|payments?|awards?)( expense)?( \(.*\))?", r"(stock|share) compensation (charges?|expense)", r"(costi|compensi) (per pagamenti )?basati su azioni"],
+    "buybacks": [r"(payments for )?(repurchases?|purchases?) of ([\w&.'’-]+ ){0,4}?(common |ordinary |treasury |company )?(stock|shares)( for treasury| and other| - common)?", r"(anti-?dilutive )?share (buy-?backs?|repurchases?)( -)?( common)?(.*cancellations?)?",
                  r"acquisto (di )?azioni proprie"],
     "dividends": [r"(cash )?dividends( paid)?( to (?!.*(non-?controlling|minority)).*)?( \(.*\))?", r"dividendi (pagati|distribuiti)"],
 }
@@ -1020,7 +1020,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         # the comparative column printed as a dash: nil ("Dividends paid (42,038) -"), for a payment not made every year;
         # elsewhere a dash read there can be another line's (Foot Locker's FX effect, a Swedish MD&A table)
         nil = key in ("dividends", "buybacks") and dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
-        if cur_f is None:
+        # no payment this year, the year before's in its own column ("Dividends paid — (2,111)", Boeing's 2021)
+        cur_nil = cur_f is None and prev_f is not None and key in ("dividends", "buybacks") and (dashed or bool(cells and any(cells)))
+        if cur_f is None and not cur_nil:
             continue                                   # nothing in the current column ("—")
         scale = 1.0 if key in PER_SHARE else (page_scale(text) if page_scale(text) != 1.0 else doc_scale)
         kind = F.METRICS[key][2] if key in F.METRICS else "flow"
@@ -1037,9 +1039,10 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
                 v = tax_expense(label, f["value"])
             return {"id": f["id"], "value": v * scale, "display": f["display"], "page": f["page"], "concept": "", "unit": "", "scale": scale}
 
-        metrics[key] = {"key": key, "kind": "ps" if key in PER_SHARE else kind, "cur": fd(cur_f),
+        zero = {"id": None, "value": 0.0, "display": "-", "page": page, "concept": "", "unit": "", "scale": scale}
+        metrics[key] = {"key": key, "kind": "ps" if key in PER_SHARE else kind, "cur": zero if cur_nil else fd(cur_f),
                         "prev": fd(prev_f) if prev_f and prev_f is not cur_f else
-                        {"id": None, "value": 0.0, "display": "-", "page": cur_f["page"], "concept": "", "unit": "", "scale": scale} if nil else None}
+                        zero if nil else None}
         side = "stock" if kind == "stock" else "flow"
         if (ys or qs) and side not in head:
             head[side] = {**page_period(text), "years": ys or [y for y, _ in qs], "quarters": qs, "dates": header_dates(text, ys) if ys else []}

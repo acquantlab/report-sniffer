@@ -274,7 +274,7 @@ def test_figures_go_under_the_column_they_sit_in(no_ai, tmp_path):
         ("Total revenues", "62,286", "58,158", "76,559"), ("Net income attributable to Example", "$ 46", "$ 303", "$ 1,203"),
         ("Other comprehensive income", "10", "20", "30"), ("Net income attributable to Example", "$ 46", "$ 303", "$ 1,203")])
     m = _run(tmp_path, [ops, cf])["fin"]["metrics"]
-    assert "dividends" not in m                                    # nothing in 2021
+    assert m["dividends"]["cur"] == 0 and m["dividends"]["prev"] == 1_158_000_000   # nothing in 2021, as filed
     assert m["fx_effect"]["cur"] == 9_000_000 and m["fx_effect"]["prev"] == -52_000_000
     assert m["cash_change"]["cur"] == 62_000_000 and m["cash_change"]["prev"] == 2_962_000_000
     assert m["net_income"]["cur"] == 46_000_000 and m["net_income"]["prev"] == 303_000_000
