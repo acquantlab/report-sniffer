@@ -1140,4 +1140,38 @@ def note_lines(x: dict, texts: list[str], statement_text: str) -> None:
                 break
             if key in x["metrics"]:
                 break
+        if key not in x["metrics"]:
+            _note_row_in_prose(x, key, texts, cur_y, prev_y)
+
+
+_PROSE_WORDS = {"interest_expense": r"interest expense", "sbc": r"(share|stock)[- ]based compensation"}
+
+
+def _note_row_in_prose(x: dict, key: str, texts: list[str], cur_y: int, prev_y: int) -> None:
+    """A note row whose table cannot be added up (cells left blank), read when the document's text says the same:
+    every year's amount, in the row's order ("Share-based compensation expense (46) (42) (46)" and "Total
+    share-based compensation cost of $46 million, $42 million and $46 million", Corning 2017)."""
+    flat = re.sub(r"\s+", " ", " ".join(texts).replace("\xa0", " "))
+    for n, t in enumerate(texts):
+        lines = t.replace("\xa0", " ").splitlines()
+        for h, head in enumerate(lines):
+            if not re.fullmatch(r"(\(\w+\)\s*)?((19|20)\d\d\s*){2,}", head.strip()):
+                continue
+            ys = [int(y) for y in re.findall(r"(?:19|20)\d\d", head)]
+            if ys[0] != cur_y or prev_y not in ys:
+                continue
+            for line in lines[h + 1:h + 25]:
+                label = re.split(r"\s[(\$—–-]*[\d—–]", line, maxsplit=1)[0]
+                shown = re.findall(r"\(?\d{1,3}(?:,\d{3})*\)?", line[len(label):])
+                if match(label.strip(" $")) != key or len(shown) != len(ys):
+                    continue
+                amounts = [s.strip("()") for s in shown]
+                said = r"\$\s?" + r"\s?million\s?,?\s?(?:and\s)?\$\s?".join(re.escape(a) for a in amounts) + r"\s?million"
+                if not re.search(_PROSE_WORDS[key] + r"[^.]{0,80}?" + said, flat, re.I):
+                    continue
+                sc = 1e6
+                mk = lambda j: {"id": None, "value": float(amounts[j].replace(",", "")) * sc, "display": shown[j], "page": n + 1,
+                                "concept": "", "unit": "", "scale": sc}
+                x["metrics"][key] = {"key": key, "kind": "flow", "cur": mk(0), "prev": mk(ys.index(prev_y))}
+                return
 
