@@ -25,7 +25,7 @@ _RESULT = r"(consolidated )?(net )?" + _RES
 # metric -> label patterns (whole row label, case-insensitive). First match on the best page wins.
 PATTERNS: dict[str, list[str]] = {
     "revenue": [r"(total )?(net )?(revenues?|sales|turnover)( and other income)?", r"total net sales", r"(total )?(net )?sales to customers",
-                r"(total )?(net )?operating revenues?", r"revenues?,? net", r"(total )?net revenues?(,? net of interest expense)?", r"(total )?revenues and other income",
+                r"(total )?(net )?operating revenues?", r"revenues?,? net", r"sales revenues?", r"(total )?net revenues?(,? net of interest expense)?", r"(total )?revenues and other income",
                 r"total revenues,? net of interest expense( after provisions? for credit losses)?",
                 r"margine di intermediazione", r"proventi operativi netti", r"net banking income", r"total operating income", r"total income",
                 r"net interest(,)? (and|fee and) (other|non-?interest|commission) (banking )?(income|revenues?)", r"total net interest and non-?interest income",
@@ -45,7 +45,7 @@ PATTERNS: dict[str, list[str]] = {
                       _RESULT + r" before (income )?tax(es|ation)? from continuing operations",   # Greek reports
                       r"(income|profit|result|earnings) after financial (items|net)",   # Swedish reports: before taxes
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
-    "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income", r"taxes",
+    "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income( and (profit|earnings))?", r"taxes",
                    r"(income )?tax (expenses?|provision|benefit)( \(benefit\)| \(expense\))?",
                    r"(provision|benefit) ?/ ?\(?(benefit|provision)\)? for (income )?taxes( on income)?",
                    # Italian banks (Bank of Italy Circular 262): "300. Tax expenses (income) of the year from continuing operations"
@@ -55,7 +55,9 @@ PATTERNS: dict[str, list[str]] = {
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
                    r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
-                   r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?"],
+                   r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?",
+                   # "Profit Attributable to: Equity holders of UCB SA" (the group's owners, not the minorities)
+                   r"profit attributable to:? (the )?(equity holders|owners|shareholders) of (?!.*(non-?controlling|minority)).*"],
     "eps_diluted": [r"diluted (net )?(" + _RES + r"|eps)( per (common |ordinary )?share( of common stock)?)?( from continuing operations)?( attributable to [^,]*)?( \(.*\))?",
                     r"earnings per share[ -–—]+diluted",
                     r"(?=.*diluted)(basic and diluted )?net " + _RES + r" per (common |ordinary )?share.*",
@@ -410,7 +412,9 @@ def _line_rank(key: str, label: str) -> int:
     if key == "revenue":
         # "Total revenues" before "Net sales"; "Total operating income" (revenue and other income, Elkem) after "Revenue"
         # "Revenue" after its parts ("Net Sales", "Royalty income", "Other revenue": UCB) over the first part
-        return 0 if re.search(r"operating income", label) else 3 if label.startswith("total") else 2 if re.fullmatch(r"(total )?revenues?", label) else 1
+        # not "Total revenues and other income" over "Sales revenues" (OMV): other income is not revenue
+        return 0 if re.search(r"operating income|and other income", label) else 3 if label.startswith("total") \
+            else 2 if re.fullmatch(r"(total )?revenues?", label) else 1
     if key == "net_income":
         return 2 if "attributable to" in label or label.startswith("parent company's") else 1
     if key in ("cfo", "cfi", "cff"):
@@ -560,6 +564,17 @@ def _continues(text: str) -> bool:
         if label != line and match(label):
             rows += 1
     return rows >= 2 and len(FIGURES.findall(text)) >= 12
+
+
+def _under_net_income(label: str, text: str) -> bool:
+    """A row of the group's owners under a heading of the net result attributable ("Net income attributable to:"),
+    not of the comprehensive income ("Total comprehensive income attributable to:")."""
+    for m in re.finditer(re.escape(label.strip()), text):
+        above = text[max(0, m.start() - 160):m.start()]
+        head = list(re.finditer(r"\b(net income|net profit|net result|profit( for the (year|period))?|result for the (year|period))[^.\d]{0,30}attributable to:?", above, re.I))
+        if head and not re.search(r"comprehensive", above[max(0, head[-1].start() - 30):], re.I):
+            return True
+    return False
 
 
 def _under_payments(label: str, text: str) -> bool:
@@ -908,6 +923,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
+        if not key and re.fullmatch(r"(the )?(owners|equity holders|shareholders) of (?!.*(non-?controlling|minority)).{1,40}", _clean(label)) \
+                and _under_net_income(label, raw.get(page, "")):
+            key = "net_income"                         # "Net income attributable to:" / "Owners of the Company 1,203.2" (ALD)
         if not key and _clean(label) == "property, plant and equipment" and _under_payments(label, raw.get(page, "")):
             key = "capex"                              # "Payments due to investments-" / "Property, plant and equipment"
         # in reading order: by line, then left to right (the text order of some PDFs is not, the Danish ESEF prints);
