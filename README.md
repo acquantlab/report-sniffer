@@ -159,14 +159,14 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.29 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.30 |
 |---|---|---|
-| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,795 of 11,795) |
+| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,832 of 11,832) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.29 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.30 |
 |---|---|---|
-| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,940 of 1,940) |
+| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,955 of 1,955) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
 
 | Scanned documents: the 29 earnings releases read **only with OCR**, as if they were scans | v2.2.3 |
@@ -178,7 +178,8 @@ The rules were first fixed on the 40 latest reports; on the other years, which t
 96.6% (2019) and 98.4% (2015–2021) right, and what was still wrong there was fixed in turn. So 100% means "no
 error left on these documents", not "no error possible": another layout can still leave a line unread or, rarely,
 read one from the wrong place. Lines a statement does not print (MGM has no "Total liabilities" row) are not counted
-as missed. The page of every figure is shown, so it can be checked. Inline XBRL filings need no such measure: their
+as missed. All other lines are found too, but for 8 the 10-Ks print only in their notes (3M's interest expense,
+Corning's 2017 share-based compensation), which the app does not read. The page of every figure is shown, so it can be checked. Inline XBRL filings need no such measure: their
 figures are the tags themselves.
 
 Quarterly figures are compared with the 10-Q (or, for a fourth quarter, the 10-K) of the same period: the quarter, the
@@ -190,7 +191,7 @@ text.
 
 **European reports in PDF** are measured too: `bench/esef.py` prints ESEF annual reports of European companies
 (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
-the same report tags. On 32 reports from 13 countries: **664 of 664 figures read are right, and every line they print is found** (v2.2.4: 423 of 462;
+the same report tags. On 32 reports from 13 countries: **668 of 668 figures read are right, and every line they print is found** (v2.2.4: 423 of 462;
 v2.2.3: 64%); 2 more equal the printed figure where the report's own tag is off (Elkem tags its EPS at a hundredth).
 A layout not yet seen can still leave a line unread rather than read it wrong. Read now: scales such as
 "DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF; decimal commas;
@@ -410,7 +411,7 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
   equals the value filed with the SEC (see [Accuracy](#accuracy)); on 32 European reports in PDF every
-  figure read equals the report's own tag, and every line printed is found (664 of 664).
+  figure read equals the report's own tag, and every line printed is found (668 of 668).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
