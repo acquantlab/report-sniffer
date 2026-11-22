@@ -514,12 +514,15 @@ SUBSIDIARY_DATA = re.compile(r"(main|key|summari[sz]ed|summary) financial (data|
 
 
 QUARTER_COLS = re.compile(r"\bQ[1-4]\s+Q[1-4]\b")
+# a quarter's columns, then the year's ("Q4 2022 Q4 2021 YTD 2022 YTD 2021", Netcompany; "Q4 Q4 Full-year Full-year", DFDS)
+YTD_COLS = re.compile(r"\bQ[1-4]\b[^\n]{0,40}?\bQ[1-4]\b[^\n]{0,40}?\b(YTD|FY|full[- ]year|12M|twelve months)\b", re.I)
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|\b(statement|position|flows?)s? (for|of) discontinued operations\b"     # F-Secure's demerged business
+               r"|\bcompany (income statement|balance sheet|statements? of (financial position|profit|comprehensive|cash flows?))"   # the parent's (Dutch reports)
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
@@ -1023,6 +1026,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             nums = _with_dashes(nums, label, text, len(ys))
             dashed = len(nums) == len(ys) and None in nums
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
+        if len(ys) == 4 and ys[:2] == ys[2:] and len(nums) == 4 and YTD_COLS.search(text[:900]):
+            cur_f, prev_f = nums[2 + ys[2:].index(max(ys))], nums[2 + ys[2:].index(max(ys) - 1)] if max(ys) - 1 in ys else None
         # the comparative column printed as a dash: nil ("Dividends paid (42,038) -"), for a payment not made every year;
         # elsewhere a dash read there can be another line's (Foot Locker's FX effect, a Swedish MD&A table)
         nil = key in ("dividends", "buybacks") and dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
