@@ -25,7 +25,7 @@ _RESULT = r"(consolidated )?(net )?" + _RES
 # metric -> label patterns (whole row label, case-insensitive). First match on the best page wins.
 PATTERNS: dict[str, list[str]] = {
     "revenue": [r"(total )?(net )?(revenues?|sales|turnover)( and other income)?", r"total net sales", r"(total )?(net )?sales to customers",
-                r"(total )?(net )?operating revenues?", r"revenues?,? net", r"(total )?net revenues?(,? net of interest expense)?", r"(total )?revenues and other income",
+                r"(total )?(net )?operating revenues?", r"revenues?,? net", r"sales revenues?", r"(total )?net revenues?(,? net of interest expense)?", r"(total )?revenues and other income",
                 r"total revenues,? net of interest expense( after provisions? for credit losses)?",
                 r"margine di intermediazione", r"proventi operativi netti", r"net banking income", r"total operating income", r"total income",
                 r"net interest(,)? (and|fee and) (other|non-?interest|commission) (banking )?(income|revenues?)", r"total net interest and non-?interest income",
@@ -45,7 +45,7 @@ PATTERNS: dict[str, list[str]] = {
                       _RESULT + r" before (income )?tax(es|ation)? from continuing operations",   # Greek reports
                       r"(income|profit|result|earnings) after financial (items|net)",   # Swedish reports: before taxes
                       r"(utile|risultato|perdita) (prima|ante) (delle )?imposte"],
-    "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income", r"taxes",
+    "income_tax": [*_TAX, r"imposte( sul reddito)?( dell'esercizio)?", r"taxes on income( and (profit|earnings))?", r"taxes",
                    r"(income )?tax (expenses?|provision|benefit)( \(benefit\)| \(expense\))?",
                    r"(provision|benefit) ?/ ?\(?(benefit|provision)\)? for (income )?taxes( on income)?",
                    # Italian banks (Bank of Italy Circular 262): "300. Tax expenses (income) of the year from continuing operations"
@@ -55,7 +55,9 @@ PATTERNS: dict[str, list[str]] = {
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
                    r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
-                   r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?"],
+                   r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?",
+                   # "Profit Attributable to: Equity holders of UCB SA" (the group's owners, not the minorities)
+                   r"profit attributable to:? (the )?(equity holders|owners|shareholders) of (?!.*(non-?controlling|minority)).*"],
     "eps_diluted": [r"diluted (net )?(" + _RES + r"|eps)( per (common |ordinary )?share( of common stock)?)?( from continuing operations)?( attributable to [^,]*)?( \(.*\))?",
                     r"earnings per share[ -–—]+diluted",
                     r"(?=.*diluted)(basic and diluted )?net " + _RES + r" per (common |ordinary )?share.*",
@@ -410,7 +412,9 @@ def _line_rank(key: str, label: str) -> int:
     if key == "revenue":
         # "Total revenues" before "Net sales"; "Total operating income" (revenue and other income, Elkem) after "Revenue"
         # "Revenue" after its parts ("Net Sales", "Royalty income", "Other revenue": UCB) over the first part
-        return 0 if re.search(r"operating income", label) else 3 if label.startswith("total") else 2 if re.fullmatch(r"(total )?revenues?", label) else 1
+        # not "Total revenues and other income" over "Sales revenues" (OMV): other income is not revenue
+        return 0 if re.search(r"operating income|and other income", label) else 3 if label.startswith("total") \
+            else 2 if re.fullmatch(r"(total )?revenues?", label) else 1
     if key == "net_income":
         return 2 if "attributable to" in label or label.startswith("parent company's") else 1
     if key in ("cfo", "cfi", "cff"):
@@ -562,6 +566,17 @@ def _continues(text: str) -> bool:
     return rows >= 2 and len(FIGURES.findall(text)) >= 12
 
 
+def _under_net_income(label: str, text: str) -> bool:
+    """A row of the group's owners under a heading of the net result attributable ("Net income attributable to:"),
+    not of the comprehensive income ("Total comprehensive income attributable to:")."""
+    for m in re.finditer(re.escape(label.strip()), text):
+        above = text[max(0, m.start() - 160):m.start()]
+        head = list(re.finditer(r"\b(net income|net profit|net result|profit( for the (year|period))?|result for the (year|period))[^.\d]{0,30}attributable to:?", above, re.I))
+        if head and not re.search(r"comprehensive", above[max(0, head[-1].start() - 30):], re.I):
+            return True
+    return False
+
+
 def _under_payments(label: str, text: str) -> bool:
     """A cash flow row under a heading of payments for investments (Merlin: "Payments due to investments-" then
     "Investment property", "Property, plant and equipment"), not under proceeds."""
@@ -576,7 +591,7 @@ def _under_payments(label: str, text: str) -> bool:
 def _toc(t: str) -> bool:
     """A table of contents: dot leaders to a page number at the end of the line ("Consolidated Statement of Financial
     Position ……… 18"), not to an amount (Adobe's statements: "Subscription ……… $ 3,223,904")."""
-    return len(re.findall(r"\.{6,}\s*\d{1,3}\s*$", t, re.M)) >= 3
+    return len(re.findall(r"\.{6,}\s*\d{1,3}(?=\s*$|\s+[A-Z])", t, re.M)) >= 3     # lines run together or not
 
 
 def _caps_title(t: str, title) -> bool:
@@ -713,6 +728,23 @@ def _amounts(nums: list, key: str) -> list:
 
 
 CELL = re.compile(r"\(?-?\d[\d,]*(?:\.\d+)?\)?%?|[—–]|(?<![\w-])-(?![\w-])|[A-Za-z]")
+
+
+def _printed_dashes(label: str, text: str, cells: list) -> bool:
+    """The empty cells of a row are dashes in the text ("Dividends paid (42,038) -"), not an amount the PDF did not
+    give as a figure ("Dividends paid -434 -237": "-237")."""
+    flat = re.sub(r"\s+", " ", text)
+    for m in re.finditer(re.escape(re.sub(r"\s+", " ", label.strip())), flat, re.I):
+        toks = []
+        for t in CELL.finditer(flat, m.end(), min(len(flat), m.end() + 240)):
+            if t.group().isalpha():
+                break
+            toks.append(t.group())
+        if len(toks) > len(cells) and toks[0] and re.fullmatch(r"\d{1,2}(\.\d{1,2})*", toks[0]):
+            toks = toks[1:]
+        if len(toks) == len(cells):
+            return all(toks[i] in "—–-" for i, c in enumerate(cells) if c is None)
+    return False
 
 
 def _with_dashes(nums: list, label: str, text: str, n: int) -> list:
@@ -891,6 +923,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
+        if not key and re.fullmatch(r"(the )?(owners|equity holders|shareholders) of (?!.*(non-?controlling|minority)).{1,40}", _clean(label)) \
+                and _under_net_income(label, raw.get(page, "")):
+            key = "net_income"                         # "Net income attributable to:" / "Owners of the Company 1,203.2" (ALD)
         if not key and _clean(label) == "property, plant and equipment" and _under_payments(label, raw.get(page, "")):
             key = "capex"                              # "Payments due to investments-" / "Property, plant and equipment"
         # in reading order: by line, then left to right (the text order of some PDFs is not, the Danish ESEF prints);
@@ -992,7 +1027,11 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     metrics, years = {}, None
     head: dict[str, dict] = {}
     equity_page = {p for p, t in page_text.items() if EQ_TITLE.search(t[:700])}
+    toc = {p for p in page_text if _toc(raw[p])}
     for key, cands in found.items():
+        cands = [c for c in cands if c[0] not in toc]  # not a table of contents' page numbers ("Revenue ……… 62")
+        if not cands:
+            continue
         has_statement = any(statement_of(key) in ks and titled.get(p, 0) >= 2 for p, ks in kinds.items())
         if has_statement:
             # with the consolidated statement at hand, its lines from it only: not a figure elsewhere (a segment's, a
@@ -1035,13 +1074,17 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if cells is not None and any(cells):
             nums = cells                               # by where each figure sits under the column headers
             if ys and not qs and len(cells) == len(ys) and None in cells:
-                dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells   # an empty cell printed "-"
+                dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells \
+                    and _printed_dashes(label, text, cells)   # an empty cell printed "-"
         elif ys and not qs and len(nums) < len(ys):
             nums = _with_dashes(nums, label, text, len(ys))
-            dashed = len(nums) == len(ys) and None in nums
+            dashed = len(nums) == len(ys) and None in nums and _printed_dashes(label, text, nums)
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
-        if len(ys) == 4 and ys[:2] == ys[2:] and len(nums) == 4 and YTD_COLS.search(text[:900]):
-            cur_f, prev_f = nums[2 + ys[2:].index(max(ys))], nums[2 + ys[2:].index(max(ys) - 1)] if max(ys) - 1 in ys else None
+        # the year's pair after the quarter's (its header can wrap: "Q4 2022 Q4 2021 YTD 2022" / "YTD 2021")
+        if len(ys) in (3, 4) and ys[0] == ys[2] and ys[1] == ys[0] - 1 and len(nums) == 4 and YTD_COLS.search(text[:900]):
+            cur_f, prev_f = nums[2 + ys[:2].index(max(ys))], nums[2 + ys[:2].index(max(ys) - 1)] if max(ys) - 1 in ys[:2] else None
+        elif len(ys) == 3 and ys[0] == ys[2] and ys[1] == ys[0] - 1 and len(nums) == 3 and YTD_COLS.search(text[:900]):
+            cur_f, prev_f = nums[2], None              # the year to date; its comparative wrapped out of the row
         # the comparative column printed as a dash: nil ("Dividends paid (42,038) -"), for a payment not made every year;
         # elsewhere a dash read there can be another line's (Foot Locker's FX effect, a Swedish MD&A table)
         nil = key in ("dividends", "buybacks") and dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
