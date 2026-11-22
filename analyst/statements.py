@@ -155,7 +155,8 @@ SCALES_EU = [
      rf"|\bmillions? (?:of )?(?:us |u\.s\. )?dollars?\b", 1e6),                    # "Million US dollar" (AB InBev)
     (rf"(?<![\w.])(?:in)?{_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
      rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b"
-     rf"|(?<![\w.]){_CODE} 1[,. ]000(?=\s+(?:notes?|consolidated|group|(?:19|20)\d\d)\b)", 1e3),                               # "EUR 1,000" heading a column
+     rf"|(?<![\w.]){_CODE} 1[,. ]000(?=\s+(?:notes?|consolidated|group|(?:19|20)\d\d)\b)"
+     rf"|\(\s*(?:in )?{_CODE} ?1[,. ]?000\s*\)", 1e3),                                # "(DKK 1,000)", "(NOK 1000)"                               # "EUR 1,000" heading a column
 ]
 
 
@@ -533,6 +534,10 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|\b(statement|position|flows?)s? (for|of) discontinued operations\b"     # F-Secure's demerged business
                r"|\bcompany (income statement|balance sheet|statements? of (financial position|profit|comprehensive|cash flows?))"   # the parent's (Dutch reports)
+               r"|\bparent (19|20)\d\d\b"                # columns "Parent 2020 Parent 2021": the parent company's statements
+               # a note's table of subsidiaries ("financial information of subsidiaries … in which material
+               # non-controlling interests exist", Telekom Austria)
+               r"|\bfinancial information (of|on|for) (the )?(\w+ )?subsidiar|\bmaterial non-?controlling interests?\b"
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
