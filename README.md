@@ -159,12 +159,12 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.34 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.35 |
 |---|---|---|
 | Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,846 of 11,846) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.34 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.35 |
 |---|---|---|
 | Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,957 of 1,957) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
@@ -201,10 +201,12 @@ dates such as "31.12.2023"; "Note" columns; side-by-side tables; "statement of p
 rather than the parent company's, a subsidiary's, a reclassified or a proportionate one; a statement carried over
 to an untitled page; a dash for a dividend not paid.
 **On reports the rules were not fitted to** the numbers are lower, and they are the honest measure of what an unseen
-layout gives: on 36 ESEF reports for 2022 (other companies, other layouts, read once the rules above were done)
-94% of the figures read were right (671 of 712) and 90% of the lines printed were found (v2.2.31: 82% and 77%).
-Part of what is left is the benchmark's own (ASML's print lost its 2022 column); the rest are layouts such as a
-segment's key figures or a parent company's statements taken for the group's, which are being worked through.
+layout gives. On 36 ESEF reports for 2022 (other companies, other layouts) v2.2.31 read 82% of the figures right
+and found 77% of the lines; fixed from what they showed, 94% (671 of 712) and 90% now. A further 33 reports for
+2021, measured only after that, are the fairest number: 81% right at first (145 wrong), 87% now (637 of 731) with
+83% of lines found. Some of what is left is the benchmark's own (prints that cut amounts short or lost a column:
+ASML 2022); the rest are layouts not seen yet. Figures the statements contradict (total assets ≠ total equity and
+liabilities, a part larger than its total) are dropped rather than shown.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
