@@ -1243,3 +1243,44 @@ def _note_row_in_prose(x: dict, key: str, texts: list[str], cur_y: int, prev_y: 
                 x["metrics"][key] = {"key": key, "kind": "flow", "cur": mk(0), "prev": mk(ys.index(prev_y))}
                 return
 
+
+def _close(a: float, b: float, tol: float = 0.005) -> bool:
+    return abs(a - b) <= max(tol * max(abs(a), abs(b)), 1.0)
+
+
+def consistent(metrics: dict) -> dict:
+    """Figures that the statements' own arithmetic contradicts are dropped, year by year: a line not read rather
+    than a line read wrong (a column shifted, an amount the PDF cut short, a figure from another table).
+    Total assets = total equity and liabilities; a part (current assets, cash; current liabilities) no larger than
+    its total; gross profit = revenue - cost of revenue. In place; returns the keys and years dropped."""
+    dropped = {}
+
+    def v(k, w):
+        m = metrics.get(k)
+        o = m.get(w) if m else None
+        return o["value"] if o and o.get("value") is not None else None
+
+    def drop(k, w):
+        if metrics.get(k) and metrics[k].get(w):
+            metrics[k][w] = None
+            dropped.setdefault(k, []).append(w)
+
+    for w in ("cur", "prev"):
+        ta, le = v("total_assets", w), v("liab_and_equity", w)
+        if ta is not None and le is not None and not _close(ta, le):
+            drop("total_assets", w), drop("liab_and_equity", w)
+        total = v("total_assets", w) or v("liab_and_equity", w)
+        for part, whole in (("current_assets", total), ("cash", v("current_assets", w) if v("current_assets", w) is not None else total),
+                            ("current_liabilities", v("total_liabilities", w) if v("total_liabilities", w) is not None else total),
+                            ("total_liabilities", total)):
+            pv = v(part, w)
+            if pv is not None and whole is not None and abs(pv) > abs(whole) * 1.005 + 1:
+                drop(part, w)
+        r, c, g = v("revenue", w), v("cost_of_revenue", w), v("gross_profit", w)
+        if r is not None and c is not None and g is not None and not _close(r - abs(c), g, 0.01):
+            drop("revenue", w), drop("cost_of_revenue", w), drop("gross_profit", w)
+    for k in list(dropped):
+        if metrics[k].get("cur") is None:
+            del metrics[k]                             # nothing left for the current year: not read
+    return dropped
+

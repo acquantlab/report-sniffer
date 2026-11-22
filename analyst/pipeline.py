@@ -380,6 +380,9 @@ def _statement_metrics(g: dict) -> Optional[dict]:
     if not _enough(x["metrics"]):
         return None
     statements.note_lines(x, every, " ".join(texts.values()))    # interest expense, share-based pay only in a note
+    statements.consistent(x["metrics"])                 # figures the statements' arithmetic contradicts: not read
+    if not _enough(x["metrics"]):
+        return None
     return x
 
 
