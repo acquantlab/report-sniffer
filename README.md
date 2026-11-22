@@ -159,12 +159,12 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.31 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.32 |
 |---|---|---|
 | Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,846 of 11,846) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.31 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.32 |
 |---|---|---|
 | Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,957 of 1,957) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
@@ -200,6 +200,11 @@ A layout not yet seen can still leave a line unread rather than read it wrong. R
 dates such as "31.12.2023"; "Note" columns; side-by-side tables; "statement of profit or loss"; the group's statements
 rather than the parent company's, a subsidiary's, a reclassified or a proportionate one; a statement carried over
 to an untitled page; a dash for a dividend not paid.
+**On reports the rules were not fitted to** the numbers are lower, and they are the honest measure of what an unseen
+layout gives: on 36 ESEF reports for 2022 (other companies, other layouts, read once the rules above were done)
+91% of the figures read were right (646 of 707) and 87% of the lines printed were found (v2.2.31: 82% and 77%).
+Part of what is left is the benchmark's own (ASML's print lost its 2022 column); the rest are layouts such as a
+segment's key figures or a parent company's statements taken for the group's, which are being worked through.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
