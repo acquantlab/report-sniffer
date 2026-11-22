@@ -576,7 +576,7 @@ def _under_payments(label: str, text: str) -> bool:
 def _toc(t: str) -> bool:
     """A table of contents: dot leaders to a page number at the end of the line ("Consolidated Statement of Financial
     Position ……… 18"), not to an amount (Adobe's statements: "Subscription ……… $ 3,223,904")."""
-    return len(re.findall(r"\.{6,}\s*\d{1,3}\s*$", t, re.M)) >= 3
+    return len(re.findall(r"\.{6,}\s*\d{1,3}(?=\s*$|\s+[A-Z])", t, re.M)) >= 3     # lines run together or not
 
 
 def _caps_title(t: str, title) -> bool:
@@ -713,6 +713,23 @@ def _amounts(nums: list, key: str) -> list:
 
 
 CELL = re.compile(r"\(?-?\d[\d,]*(?:\.\d+)?\)?%?|[—–]|(?<![\w-])-(?![\w-])|[A-Za-z]")
+
+
+def _printed_dashes(label: str, text: str, cells: list) -> bool:
+    """The empty cells of a row are dashes in the text ("Dividends paid (42,038) -"), not an amount the PDF did not
+    give as a figure ("Dividends paid -434 -237": "-237")."""
+    flat = re.sub(r"\s+", " ", text)
+    for m in re.finditer(re.escape(re.sub(r"\s+", " ", label.strip())), flat, re.I):
+        toks = []
+        for t in CELL.finditer(flat, m.end(), min(len(flat), m.end() + 240)):
+            if t.group().isalpha():
+                break
+            toks.append(t.group())
+        if len(toks) > len(cells) and toks[0] and re.fullmatch(r"\d{1,2}(\.\d{1,2})*", toks[0]):
+            toks = toks[1:]
+        if len(toks) == len(cells):
+            return all(toks[i] in "—–-" for i, c in enumerate(cells) if c is None)
+    return False
 
 
 def _with_dashes(nums: list, label: str, text: str, n: int) -> list:
@@ -992,7 +1009,11 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     metrics, years = {}, None
     head: dict[str, dict] = {}
     equity_page = {p for p, t in page_text.items() if EQ_TITLE.search(t[:700])}
+    toc = {p for p in page_text if _toc(raw[p])}
     for key, cands in found.items():
+        cands = [c for c in cands if c[0] not in toc]  # not a table of contents' page numbers ("Revenue ……… 62")
+        if not cands:
+            continue
         has_statement = any(statement_of(key) in ks and titled.get(p, 0) >= 2 for p, ks in kinds.items())
         if has_statement:
             # with the consolidated statement at hand, its lines from it only: not a figure elsewhere (a segment's, a
@@ -1035,13 +1056,17 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if cells is not None and any(cells):
             nums = cells                               # by where each figure sits under the column headers
             if ys and not qs and len(cells) == len(ys) and None in cells:
-                dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells   # an empty cell printed "-"
+                dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells \
+                    and _printed_dashes(label, text, cells)   # an empty cell printed "-"
         elif ys and not qs and len(nums) < len(ys):
             nums = _with_dashes(nums, label, text, len(ys))
-            dashed = len(nums) == len(ys) and None in nums
+            dashed = len(nums) == len(ys) and None in nums and _printed_dashes(label, text, nums)
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
-        if len(ys) == 4 and ys[:2] == ys[2:] and len(nums) == 4 and YTD_COLS.search(text[:900]):
-            cur_f, prev_f = nums[2 + ys[2:].index(max(ys))], nums[2 + ys[2:].index(max(ys) - 1)] if max(ys) - 1 in ys else None
+        # the year's pair after the quarter's (its header can wrap: "Q4 2022 Q4 2021 YTD 2022" / "YTD 2021")
+        if len(ys) in (3, 4) and ys[0] == ys[2] and ys[1] == ys[0] - 1 and len(nums) == 4 and YTD_COLS.search(text[:900]):
+            cur_f, prev_f = nums[2 + ys[:2].index(max(ys))], nums[2 + ys[:2].index(max(ys) - 1)] if max(ys) - 1 in ys[:2] else None
+        elif len(ys) == 3 and ys[0] == ys[2] and ys[1] == ys[0] - 1 and len(nums) == 3 and YTD_COLS.search(text[:900]):
+            cur_f, prev_f = nums[2], None              # the year to date; its comparative wrapped out of the row
         # the comparative column printed as a dash: nil ("Dividends paid (42,038) -"), for a payment not made every year;
         # elsewhere a dash read there can be another line's (Foot Locker's FX effect, a Swedish MD&A table)
         nil = key in ("dividends", "buybacks") and dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
