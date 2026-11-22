@@ -379,6 +379,7 @@ def _statement_metrics(g: dict) -> Optional[dict]:
     x = statements.extract(g["facts"], texts, before)
     if not _enough(x["metrics"]):
         return None
+    statements.note_lines(x, every, " ".join(texts.values()))    # interest expense, share-based pay only in a note
     return x
 
 

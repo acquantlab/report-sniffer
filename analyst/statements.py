@@ -1075,3 +1075,69 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             periods[side] = [period_label(months, end(top), lang()), period_label(months, end(top - 1), lang())]
     cur = next((page_currency(page_text.get(m["cur"]["page"], "")) for m in metrics.values()), "")
     return {"metrics": metrics, "currency": cur, "years": years, "periods": periods or None}
+
+
+NOTE_KEYS = ("interest_expense", "sbc")
+_CELL = re.compile(r"\(?\d{1,3}(?:,\d{3})*(?:\.\d+)?\)?|[—–]")
+
+
+def _cells(rest: str) -> list:
+    """The amounts of a note row, a dash as 0: "$ 529 $ 448 $ 350", "— 162 —"."""
+    out = []
+    for c in _CELL.findall(rest):
+        out.append(0.0 if c in "—–" else (-1 if c.startswith("(") else 1) * float(c.strip("()").replace(",", "")))
+    return out
+
+
+def note_lines(x: dict, texts: list[str], statement_text: str) -> None:
+    """Interest expense and share-based pay that the statements do not print, from a note table that breaks a
+    statement line down (3M: "Other expense (income), net consists of the following: (Millions) 2020 2019 2018 /
+    Interest expense $ 529 $ 448 $ 350 / … / Total $ 450 $ 462 $ 207"). Only from a table that proves itself:
+    under a header of the statements' own years, every row a full set of figures, the rows adding up to its
+    "Total" in every column, and that total printed in the statements. A row of the same name elsewhere is
+    often another amount (MGM's, PepsiCo's notes): not read. In x["metrics"] in place."""
+    if not x.get("years"):
+        return
+    cur_y, prev_y = x["years"]
+    for key in NOTE_KEYS:
+        if key in x["metrics"]:
+            continue
+        for n, t in enumerate(texts):
+            lines = t.replace("\xa0", " ").splitlines()
+            for h, head in enumerate(lines):
+                if not re.fullmatch(r"(\(\w+\)\s*)?((19|20)\d\d\s*){2,}", head.strip()):
+                    continue
+                ys = [int(y) for y in re.findall(r"(?:19|20)\d\d", head)]
+                if ys[0] != cur_y or prev_y not in ys:
+                    continue
+                rows, total, hit = [], None, None
+                for line in lines[h + 1:h + 25]:
+                    label = re.split(r"\s[(\$—–-]*[\d—–]", line, maxsplit=1)[0]
+                    cells = _cells(line[len(label):])
+                    label = label.strip(" $€£")
+                    if len(cells) != len(ys) or not label:
+                        break                          # not a full row: not a table that can be checked
+                    if re.fullmatch(r"total", label, re.I):
+                        total = (cells, line[line.find(label) + len(label):])
+                        break
+                    rows.append(cells)
+                    if match(label) == key:
+                        hit = (cells, re.findall(r"\(?\d{1,3}(?:,\d{3})*\)?|[—–]", line[line.find(label) + len(label):]))
+                if not (hit and total and len(rows) >= 2):
+                    continue
+                if any(abs(sum(r[j] for r in rows) - total[0][j]) > 0.5 for j in range(len(ys))):
+                    continue                           # does not add up
+                shown = re.findall(r"\(?\d{1,3}(?:,\d{3})*\)?", total[1])[0]
+                if not re.search(r"(?<![\d,.])" + re.escape(shown.strip("()")) + r"(?![\d,.])", statement_text):
+                    continue                           # its total is not a statement's line
+                sc = page_scale(t) if page_scale(t) != 1.0 else 1e6 if re.search(r"\(millions\)|in millions", t, re.I) else None
+                if not sc:
+                    continue
+                i_prev = ys.index(prev_y)
+                mk = lambda j: {"id": None, "value": abs(hit[0][j]) * sc, "display": hit[1][j], "page": n + 1,
+                                "concept": "", "unit": "", "scale": sc}
+                x["metrics"][key] = {"key": key, "kind": "flow", "cur": mk(0), "prev": mk(i_prev)}
+                break
+            if key in x["metrics"]:
+                break
+
