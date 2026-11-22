@@ -573,6 +573,12 @@ def _under_payments(label: str, text: str) -> bool:
     return False
 
 
+def _toc(t: str) -> bool:
+    """A table of contents: dot leaders to a page number at the end of the line ("Consolidated Statement of Financial
+    Position ……… 18"), not to an amount (Adobe's statements: "Subscription ……… $ 3,223,904")."""
+    return len(re.findall(r"\.{6,}\s*\d{1,3}\s*$", t, re.M)) >= 3
+
+
 def _caps_title(t: str, title) -> bool:
     """A title set in capitals on a line of its own, with no amount above it, after a page's explanatory paragraph
     (VIG: "The numbers next to the individual items … refer to …" then "CONSOLIDATED INCOME STATEMENT")."""
@@ -601,7 +607,7 @@ def statement_pages(texts: list[str]) -> list[int]:
                              or title.start() > len(t) - 250):
             continue                                   # a title with its column header under it, not a mention
         figs = len(FIGURES.findall(t))
-        if figs < 12 or len(re.findall(r"\.{6,}\s*\d", t)) >= 3:         # or a table of contents ("Statement …… 18")
+        if figs < 12 or _toc(t):         # or a table of contents ("Statement …… 18")
             continue
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
@@ -925,7 +931,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         m = title_match(t) or next(_titles(t, len(t)), None)   # or one further down (Arctic Paper's cash flow statement under
         if not m:                                              # the end of its balance sheet)
             return 0
-        if len(re.findall(r"\.{6,}\s*\d", t)) >= 3:
+        if _toc(t):
             return 0                                           # a table of contents ("Statement of Financial Position …… 18")
         head = t[:700].lower() + " " + t[max(0, m.start() - 60):m.end()].lower()    # "Consolidated" before a title lower down
         if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
