@@ -159,14 +159,14 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.3 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.29 |
 |---|---|---|
-| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,787 of 11,787) |
+| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,795 of 11,795) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.3 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.29 |
 |---|---|---|
-| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,939 of 1,939) |
+| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,940 of 1,940) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
 
 | Scanned documents: the 29 earnings releases read **only with OCR**, as if they were scans | v2.2.3 |
@@ -190,13 +190,13 @@ text.
 
 **European reports in PDF** are measured too: `bench/esef.py` prints ESEF annual reports of European companies
 (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
-the same report tags. On 32 reports from 13 countries: **655 of 655 figures read are right** (v2.2.4: 423 of 462;
+the same report tags. On 32 reports from 13 countries: **664 of 664 figures read are right, and every line they print is found** (v2.2.4: 423 of 462;
 v2.2.3: 64%); 2 more equal the printed figure where the report's own tag is off (Elkem tags its EPS at a hundredth).
-Fewer lines are found than in US reports (99% of those printed): some layouts (statements printed as vertical text,
-a statement split over pages without titles) leave a line unread rather than read wrong. Read now: scales such as
+A layout not yet seen can still leave a line unread rather than read it wrong. Read now: scales such as
 "DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF; decimal commas;
 dates such as "31.12.2023"; "Note" columns; side-by-side tables; "statement of profit or loss"; the group's statements
-rather than the parent company's, a subsidiary's, a reclassified or a proportionate one.
+rather than the parent company's, a subsidiary's, a reclassified or a proportionate one; a statement carried over
+to an untitled page; a dash for a dividend not paid.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
 
 ```
@@ -410,7 +410,7 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
   equals the value filed with the SEC (see [Accuracy](#accuracy)); on 32 European reports in PDF every
-  figure read equals the report's own tag, though fewer lines are found (99%).
+  figure read equals the report's own tag, and every line printed is found (664 of 664).
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
