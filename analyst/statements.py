@@ -149,9 +149,11 @@ _CUR = r"(?:us\$|u\.s\.\$|\$|€|£|eur|euros?|usd|sek|dkk|nok|chf|gbp|pln|isk|h
 _CODE = r"(?:eur|€|sek|nok|dkk|usd|chf|pln|gbp)"
 SCALES_EU = [
     (rf"(?<![\w.]){_CUR} ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
-    (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}", 1e6),
+    (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}"
+     rf"|\bmillions? (?:of )?(?:us |u\.s\. )?dollars?\b", 1e6),                    # "Million US dollar" (AB InBev)
     (rf"(?<![\w.])(?:in)?{_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
-     rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b", 1e3),
+     rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b"
+     rf"|(?<![\w.]){_CODE} 1[,. ]000(?=\s+(?:notes?|consolidated|group|(?:19|20)\d\d)\b)", 1e3),                               # "EUR 1,000" heading a column
 ]
 
 
@@ -511,11 +513,13 @@ SUBSIDIARY_DATA = re.compile(r"(main|key|summari[sz]ed|summary) financial (data|
                              r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information", re.I)
 
 
+QUARTER_COLS = re.compile(r"\bQ[1-4]\s+Q[1-4]\b")
 NOT_PRIMARY = (r"parent company|condensed financial information of (the )?registrant|\bregistrant\b|schedule i\b|capogruppo|separate financial statements"
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
+               r"|\b(statement|position|flows?)s? (for|of) discontinued operations\b"     # F-Secure's demerged business
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
@@ -593,7 +597,7 @@ def statement_pages(texts: list[str]) -> list[int]:
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title)
-        cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I))
+        cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
         rank = (not re.search(NOT_PRIMARY, head, re.I) and not cents, top, "consolidat" in (head + " " + title.group()).lower(),
                 not re.search(r"comprehensive", head, re.I), not cond, figs)
@@ -956,7 +960,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     def condensed(t: str) -> bool:
         m = title_match(t)
         # "Balance sheet condensed by main items"; a bank's "Reclassified consolidated income statement" after the official one
-        return bool(m and re.search(r"condensed|reclassified", t[max(0, m.start() - 60):m.end() + 40], re.I))
+        # a quarter's statement in an annual report ("2022 2021 DKK m Note Q4 Q4", DFDS) after the year's own
+        return bool(m and (re.search(r"condensed|reclassified", t[max(0, m.start() - 60):m.end() + 40], re.I)
+                           or QUARTER_COLS.search(t[m.end():m.end() + 300])))
     cond = {p: condensed(t) for p, t in page_text.items()}
     # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
     scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
