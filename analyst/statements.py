@@ -1252,7 +1252,7 @@ def consistent(metrics: dict) -> dict:
     """Figures that the statements' own arithmetic contradicts are dropped, year by year: a line not read rather
     than a line read wrong (a column shifted, an amount the PDF cut short, a figure from another table).
     Total assets = total equity and liabilities; a part (current assets, cash; current liabilities) no larger than
-    its total; gross profit = revenue - cost of revenue. In place; returns the keys and years dropped."""
+    its total. In place; returns the keys and years dropped."""
     dropped = {}
 
     def v(k, w):
@@ -1270,15 +1270,13 @@ def consistent(metrics: dict) -> dict:
         if ta is not None and le is not None and not _close(ta, le):
             drop("total_assets", w), drop("liab_and_equity", w)
         total = v("total_assets", w) or v("liab_and_equity", w)
+        # (not total liabilities against total assets: a negative equity, Boeing's; not gross profit against revenue
+        # less cost of revenue: a line between them, AMD's amortization)
         for part, whole in (("current_assets", total), ("cash", v("current_assets", w) if v("current_assets", w) is not None else total),
-                            ("current_liabilities", v("total_liabilities", w) if v("total_liabilities", w) is not None else total),
-                            ("total_liabilities", total)):
+                            ("current_liabilities", v("total_liabilities", w))):
             pv = v(part, w)
             if pv is not None and whole is not None and abs(pv) > abs(whole) * 1.005 + 1:
                 drop(part, w)
-        r, c, g = v("revenue", w), v("cost_of_revenue", w), v("gross_profit", w)
-        if r is not None and c is not None and g is not None and not _close(r - abs(c), g, 0.01):
-            drop("revenue", w), drop("cost_of_revenue", w), drop("gross_profit", w)
     for k in list(dropped):
         if metrics[k].get("cur") is None:
             del metrics[k]                             # nothing left for the current year: not read
