@@ -358,7 +358,9 @@ def header_years(text: str) -> list[int]:
         # Merlin) is no column
         dated = lambda pos: re.search(r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2},?\s*$|\b\d{1,2}\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*$",
                                       text[max(0, pos - 25):pos], re.I)
-        if len(ys) == 3 and ys[0] == ys[1] > ys[2] and dated(run[0][0]) and not dated(run[1][0]):
+        # or in the page's heading ("ANNUAL REPORT 2022 INCOME STATEMENT – GROUP (MSEK) Note 2022 2021", ITAB)
+        wordy = len(re.findall(r"[A-Za-z]{2,}", text[run[0][0] + 4:run[1][0]])) >= 3
+        if len(ys) == 3 and ys[0] == ys[1] > ys[2] and (dated(run[0][0]) or wordy) and not dated(run[1][0]):
             ys = ys[1:]
     # a dateline running into the header ("… 2022, 2021, and 2020  2022 2021 2020" read as 2020 2022 2021 2020):
     # columns are in order (2022 2021 2020), or the same block twice (2023 2022 2023 2022)
@@ -407,12 +409,16 @@ def _line_rank(key: str, label: str) -> int:
     the company before the result including minority interests."""
     if key == "revenue":
         # "Total revenues" before "Net sales"; "Total operating income" (revenue and other income, Elkem) after "Revenue"
-        return 0 if re.search(r"operating income", label) else 2 if label.startswith("total") else 1
+        # "Revenue" after its parts ("Net Sales", "Royalty income", "Other revenue": UCB) over the first part
+        return 0 if re.search(r"operating income", label) else 3 if label.startswith("total") else 2 if re.fullmatch(r"(total )?revenues?", label) else 1
     if key == "net_income":
         return 2 if "attributable to" in label or label.startswith("parent company's") else 1
     if key in ("cfo", "cfi", "cff"):
         # the total before its continuing-operations part; IFRS "cash generated from operations" is before interest and taxes
-        return (2 if "activities" in label and not label.startswith("cash generated") else 1) * 2 - ("continuing operations" in label)
+        # and the net line after interest and taxes over a "Cash flows from operating activities" subtotal before them
+        # (Greek, Polish reports print both)
+        return (2 if "activities" in label and not label.startswith("cash generated") else 1) * 4 - 2 * ("continuing operations" in label) \
+            + label.startswith("net ")
     if key == "cash_change":
         # the change after exchange-rate effects, as tagged, over the one before them (Arctic Paper prints both)
         return 2 if re.search(r"\bafter\b.*exchange", label) else 0 if re.search(r"\bbefore\b.*exchange", label) else 1
@@ -595,7 +601,7 @@ def statement_pages(texts: list[str]) -> list[int]:
                              or title.start() > len(t) - 250):
             continue                                   # a title with its column header under it, not a mention
         figs = len(FIGURES.findall(t))
-        if figs < 12:
+        if figs < 12 or len(re.findall(r"\.{6,}\s*\d", t)) >= 3:         # or a table of contents ("Statement …… 18")
             continue
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
@@ -919,6 +925,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         m = title_match(t) or next(_titles(t, len(t)), None)   # or one further down (Arctic Paper's cash flow statement under
         if not m:                                              # the end of its balance sheet)
             return 0
+        if len(re.findall(r"\.{6,}\s*\d", t)) >= 3:
+            return 0                                           # a table of contents ("Statement of Financial Position …… 18")
         head = t[:700].lower() + " " + t[max(0, m.start() - 60):m.end()].lower()    # "Consolidated" before a title lower down
         if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
             return 1
