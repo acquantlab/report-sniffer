@@ -43,7 +43,7 @@ html,body{margin:0;background:transparent}
 
 
 # bumped whenever the reading changes, so documents read by older code are read again
-PIPELINE_VERSION = 41
+PIPELINE_VERSION = 42
 
 
 def _id(*parts) -> str:
@@ -379,6 +379,7 @@ def _statement_metrics(g: dict) -> Optional[dict]:
     x = statements.extract(g["facts"], texts, before)
     if not _enough(x["metrics"]):
         return None
+    statements.note_lines(x, every, " ".join(texts.values()))    # interest expense, share-based pay only in a note
     return x
 
 

@@ -159,14 +159,14 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.30 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.31 |
 |---|---|---|
-| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,832 of 11,832) |
+| Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,846 of 11,846) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.30 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.31 |
 |---|---|---|
-| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,955 of 1,955) |
+| Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,957 of 1,957) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
 
 | Scanned documents: the 29 earnings releases read **only with OCR**, as if they were scans | v2.2.3 |
@@ -178,8 +178,10 @@ The rules were first fixed on the 40 latest reports; on the other years, which t
 96.6% (2019) and 98.4% (2015–2021) right, and what was still wrong there was fixed in turn. So 100% means "no
 error left on these documents", not "no error possible": another layout can still leave a line unread or, rarely,
 read one from the wrong place. Lines a statement does not print (MGM has no "Total liabilities" row) are not counted
-as missed. All other lines are found too, but for 8 the 10-Ks print only in their notes (3M's interest expense,
-Corning's 2017 share-based compensation), which the app does not read. The page of every figure is shown, so it can be checked. Inline XBRL filings need no such measure: their
+as missed. Every other line is found, all of them, secondary lines too. Interest expense and share-based pay that a
+10-K prints only in a note are read from that note when it proves itself: its table adds up to a total the statements
+print (3M), or the text says the same amounts (Corning 2017); a note row of the same name alone is often another
+amount, and is not read. The page of every figure is shown, so it can be checked. Inline XBRL filings need no such measure: their
 figures are the tags themselves.
 
 Quarterly figures are compared with the 10-Q (or, for a fourth quarter, the 10-K) of the same period: the quarter, the
