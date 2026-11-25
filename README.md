@@ -159,12 +159,12 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.35 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.36 |
 |---|---|---|
 | Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,846 of 11,846) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.35 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.36 |
 |---|---|---|
 | Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,957 of 1,957) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
@@ -193,7 +193,7 @@ text.
 
 **European reports in PDF** are measured too: `bench/esef.py` prints ESEF annual reports of European companies
 (filings.xbrl.org, English versions) to PDF, reads them like any untagged PDF and compares each figure with the value
-the same report tags. On 32 reports from 13 countries: **674 of 674 figures read are right, and every line they print is found** (v2.2.4: 423 of 462;
+the same report tags. On 32 reports from 13 countries: **679 of 679 figures read are right**, with 9 printed lines not found (v2.2.4: 423 of 462;
 v2.2.3: 64%); 2 more equal the printed figure where the report's own tag is off (Elkem tags its EPS at a hundredth).
 A layout not yet seen can still leave a line unread rather than read it wrong. Read now: scales such as
 "DKKm", "EUR '000", "TEUR"; amounts with spaces between thousands ("197 034") or broken by the PDF; decimal commas;
@@ -202,9 +202,9 @@ rather than the parent company's, a subsidiary's, a reclassified or a proportion
 to an untitled page; a dash for a dividend not paid.
 **On reports the rules were not fitted to** the numbers are lower, and they are the honest measure of what an unseen
 layout gives. On 36 ESEF reports for 2022 (other companies, other layouts) v2.2.31 read 82% of the figures right
-and found 77% of the lines; fixed from what they showed, 94% (671 of 712) and 90% now. A further 33 reports for
-2021, measured only after that, are the fairest number: 81% right at first (145 wrong), 87% now (637 of 731) with
-83% of lines found. Some of what is left is the benchmark's own (prints that cut amounts short or lost a column:
+and found 77% of the lines; fixed from what they showed, 94% (671 of 712) and 90%, and 93% (696 of 748) with 89% found now. A further 33 reports for
+2021, measured only after that, are the fairest number: 81% right at first (145 wrong), 89% now (655 of 733) with
+86% of lines found. Some of what is left is the benchmark's own (prints that cut amounts short or lost a column:
 ASML 2022); the rest are layouts not seen yet. Figures the statements contradict (total assets ≠ total equity and
 liabilities, a part larger than its total) are dropped rather than shown.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
@@ -420,7 +420,7 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
   equals the value filed with the SEC (see [Accuracy](#accuracy)); on 32 European reports in PDF every
-  figure read equals the report's own tag, and every line printed is found (674 of 674).
+  figure read equals the report's own tag, and 679 of 679 figures read right, 9 printed lines not found.
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
