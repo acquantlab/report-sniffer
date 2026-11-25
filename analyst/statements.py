@@ -1127,7 +1127,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
         # the year's pair after the quarter's (its header can wrap: "Q4 2022 Q4 2021 YTD 2022" / "YTD 2021")
         # each year's line, then its subtotal ("Cash and cash equivalents 318,127 4,981,173 584,681 4,287,672", Tenaris)
-        if len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
+        if statement_of(key) == "bs" and len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
                 and abs(nums[1]["value"]) >= abs(nums[0]["value"]) and abs(nums[3]["value"]) >= abs(nums[2]["value"]) \
                 and not re.search(r"\b(three|six|nine|3|6|9) months\b|\bquarters?\b|\bhalf[- ]year\b|\bQ[1-4]\b", text[:1500], re.I):
             cur_f, prev_f = nums[0], nums[2]
