@@ -538,6 +538,7 @@ NOT_PRIMARY = (r"parent company|condensed financial information of (the )?regist
                # a note's table of subsidiaries ("financial information of subsidiaries … in which material
                # non-controlling interests exist", Telekom Austria)
                r"|\bfinancial information (of|on|for) (the )?(\w+ )?subsidiar|\bmaterial non-?controlling interests?\b"
+               r"|alternative performance measures|\bnon-?consolidated\b|statutory accounts|\babridged\b|\bby business lines?\b"
                r"|(main|key|summari[sz]ed|summary) financial (data|information) (for|of) the [\w&.' -]{1,40}(group|subsidiar)|\beliminations\b"
                # a statement of the legal entity, not the group: "Income statement - Elkem ASA"
                r"|(statement|sheet)s?\b[^\n]{0,30}\s[-–—]\s+(?-i:[A-Z])[\w&.' -]{1,40}?\s(?-i:ASA|AB|AG|SE|S\.A\.|SA|N\.V\.|NV|Oyj|plc|A/S|S\.p\.A\.)\b"
@@ -911,6 +912,12 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     from . import financials as F
     from .tables import period_label
     from .i18n import lang
+    # an amount the PDF cut short is not one: "9,34" or "759,69" on a page whose thousands are commas (9,347,545),
+    # "(488" without its closing parenthesis (prints that clip a column)
+    comma_page = {p: len(re.findall(r"\d,\d{3}(?!\d)", t)) >= 8 and len(re.findall(r"\d\.\d{3}(?!\d)", t)) * 5 <= len(re.findall(r"\d,\d{3}(?!\d)", t))
+                  for p, t in raw.items()}
+    facts = [f for f in facts if not (f["display"].count("(") != f["display"].count(")")
+                                      or comma_page.get(f["page"]) and re.fullmatch(r"\(?-?\d{1,3}(,\d{3})*,\d{1,2}\)?", f["display"].strip("$€£ ")))]
     groups: dict[tuple[int, str], list[dict]] = {}
     # side by side, the left column's label run into the right one's on the same row ("Cash and cash equivalents
     # Total equity and liabilities" next to "Total equity and liabilities", the Danish ESEF): that row's figures
@@ -1033,6 +1040,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     head: dict[str, dict] = {}
     equity_page = {p for p, t in page_text.items() if EQ_TITLE.search(t[:700])}
     toc = {p for p in page_text if _toc(raw[p])}
+    # a table over many years ("SEKm 2021 2020 … 2012") or a year pair repeated per segment ("1–12/2021 1–12/2020" × 3):
+    # a summary or a breakdown, not the statement (2 or 3 years; 4 columns with a quarter's)
+    toc |= {p for p, t in page_text.items() if len(set(header_years(t))) > 4 or len(header_years(t)) >= 6}
     for key, cands in found.items():
         cands = [c for c in cands if c[0] not in toc]  # not a table of contents' page numbers ("Revenue ……… 62")
         if not cands:
