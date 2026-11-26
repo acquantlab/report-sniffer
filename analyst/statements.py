@@ -53,7 +53,7 @@ PATTERNS: dict[str, list[str]] = {
                    r"imposte sul reddito (dell'esercizio|del periodo) dell'operativit[aà] corrente"],
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income|profit ?/? ?\(loss\)|\(loss\) ?/? ?profit)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
-                   r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
+                   r"(net )?(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (financial |reporting )?(year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
                    r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
                    r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?",
                    # "Profit Attributable to: Equity holders of UCB SA" (the group's owners, not the minorities)
@@ -640,7 +640,8 @@ def statement_pages(texts: list[str]) -> list[int]:
         # note or the MD&A has text above it
         above = t[:title.start()]
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title) \
-            or (title.start() < 600 and len(above.split()) < 60 and not re.search(r"\d{1,3}[,.]\d{3}(?!\d)", above))   # under running heads only
+            or (title.start() < 600 and len(above.split()) < 60 and not re.search(r"\d{1,3}[,.]\d{3}(?!\d)", above)
+                and len(re.findall(r"\d{1,3}[,.]\d{3}(?!\d)", t)) >= 15)   # under running heads only, amounts below
         cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
         wide = len(set(header_years(t))) > 4       # a five- or ten-year summary ("Key figures", KONE)
