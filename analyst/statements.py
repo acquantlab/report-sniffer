@@ -1009,7 +1009,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             return 1
         if len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5:
             return 1                       # amounts to the cent ("32,298,207.32"): a company's statutory accounts, not the group's
-        if re.search(r"\b(accumulated )?depreciation differences?\b|\buntaxed reserves\b", t, re.I):
+        if re.search(r"\b(accumulated )?depreciation differences?\b|\buntaxed reserves\b|\bprofit allocated or loss transferred\b"
+                     r"|\boperating allocations\b", t, re.I):
             return 1                       # lines of local GAAP, which a group's IFRS statements have not: the parent's (UPM)
         # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
         i = whole.find(m.group())                  # the page before the cut: "Consolidated " right before "cash flow statement"
@@ -1317,10 +1318,10 @@ def _tax_sign(metrics: dict) -> None:
         t, p, a = (m.get(w) for m in (tax, pre, after))
         if not (t and p and a) or not t["value"]:
             continue
-        tol = max(abs(p["value"]), abs(a["value"])) * 0.002 + 1
+        tol = max(abs(p["value"]), abs(a["value"])) * 0.0005 + 2 * (t.get("scale") or 1)    # the rounding of the figures
         off, flipped = abs(p["value"] - t["value"] - a["value"]), abs(p["value"] + t["value"] - a["value"])
-        # within the minorities' share when the profit is the owners' (net income attributable)
-        if off > tol and (flipped <= tol or flipped <= off / 4 and flipped <= 0.05 * abs(a["value"])):
+        # a gap left (the minorities' share, under net income attributable) small beside the tax itself
+        if off > tol and flipped <= max(tol, 0.02 * abs(t["value"])) and flipped <= off / 10:
             tax[w] = {**t, "value": -t["value"]}
 
 
