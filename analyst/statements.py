@@ -91,7 +91,8 @@ PATTERNS: dict[str, list[str]] = {
     "cash_hfs": [r"(\(increase\)/decrease|\(increase\) decrease|increase/\(decrease\)|change) in cash.*(included in|classified as|reclassified (as|to)) (assets? )?held for sale.*",
                  r"(variazione delle )?disponibilit[aà] liquide.*(attivit[aà]|gruppi in dismissione) (possedute|destinate) (per la|alla) vendita.*"],
     "cash_change": [r"net (increase|decrease|increase \(decrease\)|\(decrease\) increase|change) in cash.*",
-                    r"(increase|decrease|increase/\(decrease\)|increase \(decrease\)|\(decrease\)/increase|\(decrease\) increase) in cash,? (and )?cash equivalents.*", r"variazione (netta )?delle disponibilit[aà] liquide.*"],
+                    r"(increase|decrease|increase/\(decrease\)|increase \(decrease\)|\(decrease\)/increase|\(decrease\) increase) in cash,? (and )?cash equivalents.*", r"variazione (netta )?delle disponibilit[aà] liquide.*",
+                    r"balance sheet change (of|in) cash.*"],
     "capex": [r"(?!investments? property)(purchases?|acquisitions?|additions?( to)?|payments?|expenditures?|investments?)( (of|to|for|in))?( acquisitions? of| acquire| purchases? of)? "
               r"(property|premises|land|plant|fixed assets|buildings|capital assets)\b(?!.*(held for sale|proceeds)).*",
               r"(property|premises|land|plant|fixed assets|buildings)[\w ,]*? (additions|purchases|acquisitions|expenditures)",
@@ -441,8 +442,9 @@ def _line_rank(key: str, label: str) -> int:
         return (2 if "activities" in label and not label.startswith("cash generated") else 1) * 4 - 2 * ("continuing operations" in label) \
             + label.startswith("net ")
     if key == "cash_change":
-        # the change after exchange-rate effects, as tagged, over the one before them (Arctic Paper prints both)
-        return 2 if re.search(r"\bafter\b.*exchange", label) else 0 if re.search(r"\bbefore\b.*exchange", label) else 1
+        # the change after exchange-rate effects, as tagged, over the one before them (Arctic Paper prints both; AmRest's
+        # "Balance sheet change of cash" under "Net change in cash")
+        return 2 if re.search(r"\bafter\b.*exchange|^balance sheet change", label) else 0 if re.search(r"\bbefore\b.*exchange", label) else 1
     if key == "eps_diluted":
         # a row named as diluted EPS before one read under a heading; the net result before continuing operations
         return (2 if not label.endswith("(heading)") else 0) + ("continuing operations" not in label)
@@ -731,7 +733,9 @@ def _drop_note_ref(nums: list, years: list, note_col: bool = False) -> list:
     """A "Note" column before the amounts ("Net sales  4  12,450  11,200"): a small whole number in front of
     more figures than the page has year columns. A two-digit amount in its own column stays."""
     if len(nums) >= 2 and _is_note_ref(nums[0], note_col):
-        cols = len(set(years)) if len(set(years)) >= 2 else 2     # "for the year ended 31 December 2022 … Note 2022 2021": two
+        # the title's year again over the columns ("for the year ended 31 December 2022 … Note 2022 2021"): two;
+        # "31 December 2020" and "1 January 2020" (a restated opening balance, Digi): three
+        cols = max(len(years) - (len(years) >= 3 and years[0] == years[1]), 2)
         if len(nums) > cols and len(nums) % cols:      # not a row printed twice ("$ 46 $ 303 $ 1,203" and again)
             return nums[1:]
     return nums
@@ -949,6 +953,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     # the column header, period and scale of a page are those of the statement on it, wherever it starts
     raw = page_text
     page_text = {p: t[statement_start(t):] for p, t in page_text.items()}
+    # "8." is the number of the next item ("276 8. (Payments)", a Spanish bank's cash flow), never an amount
+    facts = [f for f in facts if not re.fullmatch(r"\d{1,2}\.", f["display"].strip())]
     carried: dict[int, str] = {}
     before_of = {p: (p - 1 if p - 1 in page_text else p - 2 if p - 2 in page_text and p - 1 not in page_text else None) for p in page_text}
     for p in sorted(page_text):
