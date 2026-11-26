@@ -959,7 +959,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         return not re.search(re.escape(d.strip()) + r"\s{0,3}\)", t) and not re.search(r"\(\s{0,3}" + re.escape(d.strip()), t)
     # a page in thousands whose amounts all lost their last digits ("Total equity 9,34", "TOTAL LIABILITIES 5,2": a print
     # that cut the column): none of its figures
-    cut = {p for p, t in raw.items() if (page_scale(t) == 1e3 or re.search(r"\b[A-Z]{3} 1[,. ]000\b", t[:800])) and len(re.findall(r"\d[,.]\d{3}(?!\d)", t)) <= 1
+    cut = {p for p, t in raw.items() if (page_scale(t) == 1e3 or re.search(r"\b[A-Z]{3} 1[,. ]000\b", t[:800])) and len(re.findall(r"\d[,. ]\d{3}(?!\d)", t)) <= 1
            and len(re.findall(r"(?<![\d,.])\d{1,3},\d{1,2}(?![\d,])", t)) >= 4}
     facts = [f for f in facts if f["page"] not in cut]
     facts = [f for f in facts if not (clipped(f)
@@ -984,7 +984,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             if f.get("y") is not None:
                 rows.setdefault(round(f["y"]), []).append(f)
         if len(rows) >= 2 and max(len(r) for r in rows.values()) >= 2:
-            groups[g] = [f for f in fs if f.get("y") is None or len(rows[round(f["y"])]) >= 2]
+            main = max(rows, key=lambda y: len(rows[y]))     # a figure set a hair lower ("$ 3.70") is on the row
+            groups[g] = [f for f in fs if f.get("y") is None or len(rows[round(f["y"])]) >= 2 or abs(f["y"] - main) < 4]
     note_col = {p: note_column(t) for p, t in page_text.items()}
     cols = {p: page_columns([f for f in facts if f["page"] == p], note_col[p]) for p in page_text}
     found: dict[str, list] = {}
@@ -1187,7 +1188,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             cur_f, prev_f = (amts[0], amts[1]) if ys[0] > ys[1] else (amts[1], amts[0])
         # each year's line, then its subtotal ("Cash and cash equivalents 318,127 4,981,173 584,681 4,287,672", Tenaris)
         elif statement_of(key) == "bs" and not side and len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
-                and abs(nums[1]["value"]) >= abs(nums[0]["value"]) and abs(nums[3]["value"]) >= abs(nums[2]["value"]) \
+                and max(f.get("y") or 0 for f in nums) - min(f.get("y") or 0 for f in nums) < 4 and abs(nums[1]["value"]) >= abs(nums[0]["value"]) and abs(nums[3]["value"]) >= abs(nums[2]["value"]) \
                 and not re.search(r"\b(three|six|nine|3|6|9) months\b|\bquarters?\b|\bhalf[- ]year\b|\bQ[1-4]\b", text[:1500], re.I):
             cur_f, prev_f = nums[0], nums[2]
         elif len(ys) in (3, 4) and ys[0] == ys[2] and ys[1] == ys[0] - 1 and len(nums) == 4 and YTD_COLS.search(text[:900]):
