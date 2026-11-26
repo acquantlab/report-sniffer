@@ -321,6 +321,8 @@ def dot_dates(text: str) -> list:
         out = []
         for m in DOT_DATE.finditer(line):
             d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            if y < 100 and (len(m.group(1)) < 2 or len(m.group(2)) < 2):
+                continue                           # a note number ("3.2.10", "3.2.11"), not 3 February 2010
             try:
                 out.append(date(y + 2000 if y < 100 else y, mo, d))
             except ValueError:
@@ -982,6 +984,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             on_row.setdefault((f["page"], round(f["y"])), set()).add(f["label"])
     seen: dict[str, Optional[str]] = {}
     signed: set = set()
+    split: set = set()
 
     def own(label: str) -> Optional[str]:
         # a label run into from the left column's ("Taxes Dividends paid", "Change in value of biological assets Net
@@ -989,10 +992,13 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if label not in seen:
             seen[label] = None
             ws = label.split()
+            # not a label in title case, whose words all begin with a capital ("Other Operating Income"), but after "Less:"
+            title = all(w[:1].isupper() or w.lower() in _GLUE for w in ws)
             if len(ws) >= 3 and not match(label):
                 for i in range(1, len(ws) - 1):
-                    if ws[i][:1].isupper() and ws[i - 1].lower() not in _GLUE and match(" ".join(ws[i:])):
+                    if (not title or ws[i - 1].endswith(":")) and ws[i][:1].isupper() and ws[i - 1].lower() not in _GLUE | {"other", "total", "net", "non"} and match(" ".join(ws[i:])):
                         seen[label] = " ".join(ws[i:])
+                        split.add(label)
                         break
                 # or a place and date the page prints beside it ("Total liabilities Athens, April", the signatures)
                 m = re.search(r"\s[A-Z][a-z]+, (January|February|March|April|May|June|July|August|September|October|November|December)\b.*$", label)
@@ -1005,6 +1011,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         mates = on_row.get((f["page"], round(f["y"])), set()) if f.get("y") is not None else set()
         tail = next((m for m in mates if m != label and label.endswith(" " + m) and m.lower().startswith("total")), None)
         name = tail or own(label) or label
+        if label in split and re.fullmatch(r"\d{1,2}", f["display"].strip()):
+            continue                                # the note number of a heading ("Shareholders' equity 22") beside a label
         if label in signed:
             f = {**f, "inline": False}              # a cell after the date ("April 10, 2023 1,330,729"), not in a sentence
         groups.setdefault((f["page"], name), []).append(f)
