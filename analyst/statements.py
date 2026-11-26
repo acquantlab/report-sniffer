@@ -54,7 +54,7 @@ PATTERNS: dict[str, list[str]] = {
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income|profit ?/? ?\(loss\)|\(loss\) ?/? ?profit)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(net )?(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (financial |reporting )?(year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
-                   r"utile dell'esercizio", r"consolidated (net )?profit ?(/ ?|\()?loss\)?( for the (financial )?(year|period))?",   # RBI r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
+                   r"utile dell'esercizio", r"consolidated (net )?profit ?(/ ?|\()?loss\)?( for the (financial )?(year|period))?", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
                    r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?",
                    # "Profit Attributable to: Equity holders of UCB SA" (the group's owners, not the minorities)
                    r"profit attributable to:? (the )?(equity holders|owners|shareholders) of (?!.*(non-?controlling|minority)).*"],
@@ -957,6 +957,11 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             return False
         t = raw.get(f["page"], "")
         return not re.search(re.escape(d.strip()) + r"\s{0,3}\)", t) and not re.search(r"\(\s{0,3}" + re.escape(d.strip()), t)
+    # a page in thousands whose amounts all lost their last digits ("Total equity 9,34", "TOTAL LIABILITIES 5,2": a print
+    # that cut the column): none of its figures
+    cut = {p for p, t in raw.items() if (page_scale(t) == 1e3 or re.search(r"\b[A-Z]{3} 1[,. ]000\b", t[:800])) and len(re.findall(r"\d[,.]\d{3}(?!\d)", t)) <= 1
+           and len(re.findall(r"(?<![\d,.])\d{1,3},\d{1,2}(?![\d,])", t)) >= 4}
+    facts = [f for f in facts if f["page"] not in cut]
     facts = [f for f in facts if not (clipped(f)
                                       or comma_page.get(f["page"]) and re.fullmatch(r"\(?-?\d{1,3}(,\d{3})*,\d{1,2}\)?", f["display"].strip("$€£ ")))]
     groups: dict[tuple[int, str], list[dict]] = {}
@@ -971,6 +976,15 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         mates = on_row.get((f["page"], round(f["y"])), set()) if f.get("y") is not None else set()
         tail = next((m for m in mates if m != label and label.endswith(" " + m) and m.lower().startswith("total")), None)
         groups.setdefault((f["page"], tail or label), []).append(f)
+    # a lone figure a line off the row its label heads, the row's own figures being several (a page number or a stray
+    # amount under "Net increase/(decrease) in cash … (Α) 6,565 5,561 (412) 5,598", Piraeus)
+    for g, fs in groups.items():
+        rows: dict = {}
+        for f in fs:
+            if f.get("y") is not None:
+                rows.setdefault(round(f["y"]), []).append(f)
+        if len(rows) >= 2 and max(len(r) for r in rows.values()) >= 2:
+            groups[g] = [f for f in fs if f.get("y") is None or len(rows[round(f["y"])]) >= 2]
     note_col = {p: note_column(t) for p, t in page_text.items()}
     cols = {p: page_columns([f for f in facts if f["page"] == p], note_col[p]) for p in page_text}
     found: dict[str, list] = {}
