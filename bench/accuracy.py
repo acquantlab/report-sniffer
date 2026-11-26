@@ -242,6 +242,7 @@ def read(doc: str):
         if not kinds or re.search(statements.NOT_PRIMARY, t[:700], re.I):
             continue
         for line in t.splitlines():
+            line = re.sub(r"^\d{1,2}(\.\d{1,2})?\s+(?=[A-Za-z])", "", line.strip())    # after its note number ("3 Revenue")
             label = re.split(r"\s[(\$—–-]*\d", line, maxsplit=1)[0]
             # not a guarantor table's row (parent, guarantors, others, eliminations, total: five columns or more)
             rest = line[len(label):]

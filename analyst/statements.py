@@ -393,6 +393,12 @@ def header_years(text: str) -> list[int]:
         again = re.search(r"\b(ended|notes?)\b", text[run[0][0] + 4:run[1][0]], re.I)
         if len(ys) == 3 and ys[0] == ys[1] > ys[2] and (dated(run[0][0]) or wordy) and (not dated(run[1][0]) or again):
             ys = ys[1:]
+        # the period in prose, then the header ("for the period from 1 January 2022 to 31 December 2022  2021 2022",
+        # Austrian reports): the plain years after the dates are the columns
+        k = next((i for i, (pos, _) in enumerate(run) if not dated(pos)), 0)
+        if k >= 2 and len({y for _, y in run[:k]}) == 1 and len(run) - k >= 2 and len({y for _, y in run[k:]}) > 1 and not any(dated(pos) for pos, _ in run[k:]) \
+                and not re.search(r"[A-Za-z]", text[run[k][0]:run[-1][0]]):     # a header line, not "… 2022 and 2021
+            ys = [y for _, y in run[k:]]
     # a dateline running into the header ("… 2022, 2021, and 2020  2022 2021 2020" read as 2020 2022 2021 2020):
     # columns are in order (2022 2021 2020), or the same block twice (2023 2022 2023 2022)
     def ordered(v):
@@ -576,6 +582,10 @@ def _headings(text: str):
         after = text[m.end():m.end() + 250]
         if re.match(r"\s*(for|of) the parent company\b", after, re.I):
             continue                                   # "INCOME STATEMENT FOR THE PARENT COMPANY" (XVIVO): not the group's
+        if re.search(r"\b[a-z]{2,}\s+$", text[max(0, m.start() - 30):m.start()]) and \
+                re.match(r"\s+(as|is|are|was|were|which|that|with|to|under|has|have|will|at|by|on)\s", after):
+            continue                                   # a title named in a sentence ("…grouped Consolidated Statement of
+                                                       # Operations as the compensation…", ASML's notes): not a heading
         if m.start() < 700 or HEADER_NEAR.search(after) or len(header_years(after)) >= 2 \
                 or (m.start() >= len(text) - 250 and _opens_with_columns(text)):     # the title given last (XVIVO)
             yield m
@@ -599,6 +609,7 @@ NOT_PRIMARY = (r"(?<!owners of the )(?<!holders of the )(?<!shareholders of the 
                r"|bilancio separato|statutory financial statements|consolidating|guarantor|non-guarantor|\bissuer\b"
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
+               r"|\b(reporting|information|figures|results?) (by|per) (divisions?|business (areas?|units?)|regions?)\b"   # ASSA ABLOY
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|\b(statement|position|flows?)s? (for|of) discontinued operations\b"     # F-Secure's demerged business
                r"|\bcompany (income statement|balance sheet|statements? of (financial position|profit|comprehensive|cash flows?))"   # the parent's (Dutch reports)
@@ -784,6 +795,11 @@ def _drop_note_ref(nums: list, years: list, note_col: bool = False) -> list:
         # the title's year again over the columns ("for the year ended 31 December 2022 … Note 2022 2021"): two;
         # "31 December 2020" and "1 January 2020" (a restated opening balance, Digi): three
         cols = max(len(years) - (len(years) >= 3 and years[0] == years[1]), 2)
+        # under a "Note" column, a note numbered "4.1" before whole amounts ("Financial expenses 4.1 29", a Danish
+        # report printing two statements side by side): never an amount of that row
+        if note_col and re.fullmatch(r"\d{1,2}\.\d{1,2}", nums[0]["display"].strip()) and \
+                all(re.fullmatch(r"\(?-?\d{1,3}(,\d{3})*\)?", f["display"].strip()) for f in nums[1:]):
+            return nums[1:]
         if len(nums) > cols and len(nums) % cols:      # not a row printed twice ("$ 46 $ 303 $ 1,203" and again)
             return nums[1:]
     return nums
@@ -1003,6 +1019,17 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     page_text = {p: t[statement_start(t):] for p, t in page_text.items()}
     # "8." is the number of the next item ("276 8. (Payments)", a Spanish bank's cash flow), never an amount
     facts = [f for f in facts if not re.fullmatch(r"\d{1,2}\.", f["display"].strip())]
+    # under a "Note" column, a note number like "5.12" heading three rows or more of the page (a Belgian report's
+    # cash flow: "Share based payments 5.12 & 5.20 28.3 29.9"): a note, never an amount
+    firsts: dict = {}
+    for f in sorted(facts, key=lambda f: f.get("x1", 0)):
+        firsts.setdefault((f["page"], f["label"]), f)
+    reps: dict = {}
+    for f in firsts.values():
+        if re.fullmatch(r"\d{1,2}\.\d{1,2}", f["display"].strip()):
+            reps[(f["page"], f["display"].strip())] = reps.get((f["page"], f["display"].strip()), 0) + 1
+    notes = {k for k, n in reps.items() if n >= 3 and note_column(page_text.get(k[0], ""))}
+    facts = [f for f in facts if (f["page"], f["display"].strip()) not in notes or firsts.get((f["page"], f["label"])) is not f]
     carried: dict[int, str] = {}
     origin: dict[int, tuple] = {}
     before_of = {p: (p - 1 if p - 1 in page_text else p - 2 if p - 2 in page_text and p - 1 not in page_text else None) for p in page_text}
@@ -1015,8 +1042,10 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         foot = foot_title(raw[q]) if q else None
         if foot:
             last = [foot]                              # the statement titled at the foot of the page before
-        if not last and q in origin:
-            src, last = origin[q]                      # a statement over three pages (ALD's cash flows): its title two back
+        hops = 1
+        if not last and q in origin and origin[q][2] == 1:
+            src, last, hops = *origin[q][:2], 2        # a statement over three pages (ALD's cash flows): its title two back,
+                                                       # not further (Amcor's net debt table, pages after its balance sheet)
         if last and not title_match(page_text[p]) \
                 and not re.search(r"notes to|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
                                   _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?(?! change)", _bare(page_text[p]).rstrip()[-300:], re.I):
@@ -1024,7 +1053,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             row = re.search(r"\(?\$?\s?\d{1,3}(,\d{3})+", prev)           # the header ends where the first amount is
             page_text[p] = prev[:min(row.start() if row else 300, 400)] + " " + page_text[p]
             carried[p] = src[max(0, last[-1].start() - 60):last[-1].start()].lower()   # "Consolidated " before that title
-            origin[p] = (src, last)
+            origin[p] = (src, last, hops)
     from datetime import date
     import calendar
     from . import financials as F
@@ -1213,7 +1242,11 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if before and len(re.findall(r"(?<!\d)(?<!\d[ ,.])\d{1,3}[, ]\d{3}(?!\d)", top)) >= 2:
             # its top carries on the last statement of the page before (a release's cash flow statement under its
             # statement of income goes on overleaf)
-            kinds[p].add(page_statement(before[-1].group()) or kind_of[q])
+            kind = page_statement(before[-1].group()) or kind_of[q]
+            # unless no line of that statement is on the page (a balance sheet whose title prints after its rows,
+            # a Danish report's: not its income statement going on)
+            if any(statement_of(k) == kind and any(c[0] == p for c in cs) for k, cs in found.items()):
+                kinds[p].add(kind)
     kinds = {p: k - {""} for p, k in kinds.items()}
     # the document's own statements: those of its latest year (not an investee's older ones printed after them), in
     # full rather than condensed (a 10-K's quarterly restatements)
