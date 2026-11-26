@@ -49,5 +49,8 @@ exe = EXE(pyz, a.scripts, exclude_binaries=True, name="ReportSniffer", console=F
 coll = COLLECT(exe, a.binaries, a.datas, name="ReportSniffer")
 if sys.platform == "darwin":
     # a regular app: its own window, Dock icon and menu bar
-    app = BUNDLE(coll, name="Report Sniffer.app", icon=ICON, bundle_identifier="com.acquantlab.reportsniffer",
-                 info_plist={"CFBundleDisplayName": "Report Sniffer", "NSHighResolutionCapable": True})
+    # the version shown by "About Report Sniffer" in the app menu (and by Finder's Get Info)
+    VER = (ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    app = BUNDLE(coll, name="Report Sniffer.app", icon=ICON, bundle_identifier="com.acquantlab.reportsniffer", version=VER,
+                 info_plist={"CFBundleDisplayName": "Report Sniffer", "NSHighResolutionCapable": True,
+                             "CFBundleShortVersionString": VER, "CFBundleVersion": VER})

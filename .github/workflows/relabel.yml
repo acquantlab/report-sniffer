@@ -1,0 +1,25 @@
+# Names the releases by stage (Actions → Label releases → Run workflow): the 1.x releases are the alpha, the 2.x the
+# beta (both marked pre-release), and 3.0.0 is the first release, marked latest.
+name: Label releases
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Rename the releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release list --limit 200 --json tagName --jq '.[].tagName' | while read -r tag; do
+            case "$tag" in
+              v1.*) gh release edit "$tag" --title "Report Sniffer $tag (alpha)" --prerelease ;;
+              v2.*) gh release edit "$tag" --title "Report Sniffer $tag (beta)" --prerelease ;;
+              v3.0.0) gh release edit "$tag" --title "Report Sniffer 3.0 — first release" --prerelease=false --latest ;;
+            esac
+          done
