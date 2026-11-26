@@ -640,7 +640,8 @@ def statement_pages(texts: list[str]) -> list[int]:
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title)
         cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
-        rank = (not re.search(NOT_PRIMARY, head, re.I) and not cents, top, "consolidat" in (head + " " + title.group()).lower(),
+        wide = len(set(header_years(t))) > 4       # a five- or ten-year summary ("Key figures", KONE)
+        rank = (not re.search(NOT_PRIMARY, head, re.I) and not cents and not wide, top, "consolidat" in (head + " " + title.group()).lower(),
                 not re.search(r"comprehensive", head, re.I), not cond, figs)
         # alike, the earlier one: a report prints the group's statements before the parent company's (VERBUND: 54 and 63
         # figures), unless the later one is much fuller (the statement after a table of contents naming it: 20 and 39)
@@ -894,7 +895,7 @@ def _continued(label: str, text: str) -> bool:
     """A label that ends a longer one wrapped onto its line ("Income (loss) before equity in earnings of non-consolidated
     companies and" / "income tax 730,175", Tenaris): printed in lower case after a word that runs on."""
     hits = [m for m in re.finditer(re.escape(label.strip()), text)] if label.strip()[:1].islower() else []
-    return bool(hits) and all(re.search(r"\b(and|before|of|from|for|in|on|to|after|net of)\s*$", text[max(0, m.start() - 20):m.start()])
+    return bool(hits) and all(re.search(r"[a-z]\s*$", text[max(0, m.start() - 20):m.start()])   # "comprehensive" / "income, net of tax"
                               for m in hits)
 
 
