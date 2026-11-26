@@ -54,7 +54,7 @@ PATTERNS: dict[str, list[str]] = {
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
                    r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income|profit ?/? ?\(loss\)|\(loss\) ?/? ?profit)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(net )?(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (financial |reporting )?(year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
-                   r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
+                   r"utile dell'esercizio", r"consolidated (net )?profit ?(/ ?|\()?loss\)?( for the (financial )?(year|period))?",   # RBI r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
                    r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?",
                    # "Profit Attributable to: Equity holders of UCB SA" (the group's owners, not the minorities)
                    r"profit attributable to:? (the )?(equity holders|owners|shareholders) of (?!.*(non-?controlling|minority)).*"],
@@ -80,7 +80,7 @@ PATTERNS: dict[str, list[str]] = {
                r"total equity( \(deficit\))?", r"total deficit", r"(totale )?patrimonio netto( totale)?",
                r"(stockholders|shareholders|shareowners)['’]? equity( \(deficit\))?"],      # a release's condensed balance sheet
     "cfo": [_CF + r"operating activities( (of|from) continuing operations)?", _CF + r"operations",
-            r"cash (flows? )?(generated )?from operating activities", r"cash generated from operations",
+            r"cash (flows? )?(generated )?from operating activities", r"cash generated from operations", r"(net )?operating cash flows?",
             r"flusso di cassa (netto )?(generato )?(da|dalle|dell'|delle) attivit[aà] operativ[ae]", r"flussi di cassa (netti )?(da|dalle) attivit[aà] operative"],
     "cfi": [_CF + r"investing( activities)?( (of|from) continuing operations)?",
             r"cash (flows? )?(used in|from) investing activities", r"cash flows? from \(used in\) investment activities", r"flusso di cassa (netto )?(da|dalle|dell'|delle) attivit[aà] di investimento"],
@@ -895,6 +895,13 @@ def _share_scale(metrics: dict) -> None:
             a["value"] = base * best
 
 
+def _printed(label: str, text: str) -> bool:
+    """The label as the page prints it, not one put together from a heading and a row ("Total cash flows from operating
+    activities" out of "Cash flows from operating activities" and a "Total" further on, UPM)."""
+    words = re.findall(r"[a-z]+", label.lower())
+    return bool(words) and bool(re.search(r"\W+".join(map(re.escape, words)), text, re.I))
+
+
 def _under_investing(label: str, text: str) -> bool:
     """Every row so labelled sits under the investing activities' heading, after the operating ones and before the
     financing ones."""
@@ -1139,7 +1146,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
                                                    year_of[c[0]] >= top_year, not cond[c[0]], titled.get(c[0], 0),
                                                    kind_rows(c[0], statement_of(key)), page_hits[c[0]], kind_of.get(c[0]) == statement_of(key),
-                                                   _line_rank(key, c[2]),
+                                                   _line_rank(key, c[2]) + 8 * _printed(c[2], raw.get(c[0], "")),
                                                    len(c[1]) >= 2, -c[0],
                                                    # the balance sheet's own total over a smaller table's on its page (VIEs)
                                                    abs(c[1][0]["value"]) if key in ("total_assets", "total_liabilities", "liab_and_equity") else 0))
