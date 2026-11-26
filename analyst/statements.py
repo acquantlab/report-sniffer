@@ -688,7 +688,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}|\d{1,2}(,\s?\d{1,2})+" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:\d{1,2}/\d{1,2}\s*-\s*)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:[a-z]{3}\.? \d{1,2}\s*[–-]\s*)?(?:\d{1,2}/\d{1,2}\s*-\s*)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
@@ -1117,7 +1117,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         ys = header_years(text)
         qs = header_quarters(text)
         dashed = False
-        if cells is not None and any(cells):
+        pct = len(ys) == 2 and re.search(r"\b(?:19|20)\d\d\s*%\s.{0,60}?\b(?:19|20)\d\d\s*%(?!\w)", text[:1500], re.S)
+        if cells is not None and any(cells) and not (pct and len(nums) >= 3):
             nums = cells                               # by where each figure sits under the column headers
             if ys and not qs and len(cells) == len(ys) and None in cells:
                 dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells \
@@ -1127,8 +1128,12 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             dashed = len(nums) == len(ys) and None in nums and _printed_dashes(label, text, nums)
         cur_f, prev_f = _columns(nums, ys, qs, header_dates(text, ys) if ys else None)
         # the year's pair after the quarter's (its header can wrap: "Q4 2022 Q4 2021 YTD 2022" / "YTD 2021")
+        # a "%" column after each year's ("2022 %  2021 %", KONE: the share of sales, printed without its sign)
+        amts = [f for i, f in enumerate(nums) if f and not (i % 2 and abs(f["value"]) <= 100 and re.fullmatch(r"-?\d{1,2}[.,]\d", f["display"].strip()))] if pct else []
+        if pct and len(amts) >= 2 and len(amts) < len(nums):
+            cur_f, prev_f = (amts[0], amts[1]) if ys[0] > ys[1] else (amts[1], amts[0])
         # each year's line, then its subtotal ("Cash and cash equivalents 318,127 4,981,173 584,681 4,287,672", Tenaris)
-        if statement_of(key) == "bs" and len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
+        elif statement_of(key) == "bs" and len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
                 and abs(nums[1]["value"]) >= abs(nums[0]["value"]) and abs(nums[3]["value"]) >= abs(nums[2]["value"]) \
                 and not re.search(r"\b(three|six|nine|3|6|9) months\b|\bquarters?\b|\bhalf[- ]year\b|\bQ[1-4]\b", text[:1500], re.I):
             cur_f, prev_f = nums[0], nums[2]
