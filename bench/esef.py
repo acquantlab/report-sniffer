@@ -93,7 +93,12 @@ def truth(f: dict) -> dict:
         except ValueError:
             continue
         by[dims["concept"].split(":")[-1]].append((dims.get("period", ""), v))
-    gt = {"_end": f["end"]}
+    years = [e for e in (_day(p.split("/")[1]) for vs in by.values() for p, _ in vs if "/" in p
+                         and 340 <= (_day(p.split("/")[1]) - _day(p.split("/")[0])).days <= 380)]
+    top = max(set(years), key=years.count) if years else end
+    if 350 <= (end - top).days <= 380 and sum(abs((e - end).days) <= 7 for e in years) < 0.1 * years.count(top):
+        end = top                                      # a report indexed under the year after its own (Millicom's 2023)
+    gt = {"_end": end.isoformat()}
     for key, spec in F.METRICS.items():
         vals = {"cur": defaultdict(list), "prev": defaultdict(list)}
         for c in A.concepts(F, key):

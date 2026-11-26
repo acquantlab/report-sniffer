@@ -39,7 +39,7 @@ PATTERNS: dict[str, list[str]] = {
     "gross_profit": [r"gross (profit|margin|income)", r"(margine|utile) lordo"],
     "rnd": [r"research,? (and )?development( expenses?| costs?)?", r"(costi|spese) (di|per) ricerca e sviluppo"],
     "operating_income": [r"operating (income|profit|loss)( \(loss\))?( from continuing operations| \(ebit\))?", r"operating \(loss\) income", _RES + r" from operations",
-                         r"(ebit|operating result)",
+                         r"(ebit|operating result)( before impairments?)?",
                          r"risultato operativo", r"utile operativo", r"reddito operativo"],
     "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?( from continuing operations)?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",
@@ -63,9 +63,9 @@ PATTERNS: dict[str, list[str]] = {
                    r"profit attributable to:? (the )?(equity holders|owners|shareholders) of (?!.*(non-?controlling|minority)).*"],
     "eps_diluted": [r"diluted (net )?(" + _RES + r"|eps)( per (common |ordinary )?share( of common stock)?)?( from continuing operations)?( attributable to [^,]*)?( \(.*\))?",
                     r"earnings per share[ -–—]+diluted",
-                    r"(?=.*diluted)(basic and diluted )?net " + _RES + r" per (common |ordinary )?share.*",
-                    r"(?=.*diluted)(earnings|loss) per (common |ordinary )?share.*",
-                    r"(?=.*diluted)(earnings|net income|net loss|income|loss)( \(loss\))? per (common |ordinary )?share.*",
+                    r"(?=.*(?<!un)diluted)(basic and diluted )?net " + _RES + r" per (common |ordinary )?share.*",
+                    r"(?=.*(?<!un)diluted)(earnings|loss) per (common |ordinary )?share.*",
+                    r"(?=.*(?<!un)diluted)(earnings|net income|net loss|income|loss)( \(loss\))? per (common |ordinary )?share.*",
                     r".* per diluted (common |ordinary )?share",
                     r"diluted", r"utile (netto )?(diluito )?per azione( diluito)?( \(.*\))?"],
     "diluted_shares": [r"weighted[- ]average (number of )?(common |ordinary )?shares.*diluted.*", r"diluted (weighted[- ]average )?shares.*"],
@@ -79,7 +79,7 @@ PATTERNS: dict[str, list[str]] = {
     "liab_and_equity": [r"equity and liabilities", r"total liabilities(,| and) .*(equity|deficit|investment)", r"totale passivit[aà] e patrimonio netto",
                         r"total ((share|stock)holders'? |owners'? )?equity and liabilities", r"totale patrimonio netto e passivit[aà]"],
     "temp_equity": [r"(total )?redeemable (convertible )?(preferred|preference) (stock|shares)(,.*)?", r"(total )?(temporary|mezzanine) equity"],
-    "equity": [r"total (?!.*liabilit)[\w .,&'’-]*?(stockholders|shareholders|share-holders|shareowners)['’]? (equity|deficit|investment|equity \(deficit\)|\(deficit\) equity)",
+    "equity": [r"total (?!.*liabilit)(?!.*\b(non-?)?current assets\b)[\w .,&'’-]*?(stockholders|shareholders|share-holders|shareowners)['’]? (equity|deficit|investment|equity \(deficit\)|\(deficit\) equity)",
                r"total equity( \(deficit\))?", r"total deficit", r"(totale )?patrimonio netto( totale)?",
                r"(stockholders|shareholders|shareowners)['’]? equity( \(deficit\))?"],      # a release's condensed balance sheet
     "cfo": [_CF + r"operating activities( (of|from) continuing operations)?", _CHG + r"operating activities", _CF + r"operations",
@@ -164,10 +164,10 @@ def match(label: str) -> Optional[str]:
 _CUR = r"(?:us\$|u\.s\.\$|\$|€|£|eur|euros?|usd|sek|dkk|nok|chf|gbp|pln|isk|huf|czk|ron|bgn)"
 _CODE = r"(?:eur|€|sek|nok|dkk|usd|chf|pln|gbp)"
 SCALES_EU = [
-    (rf"(?<![\w.]){_CUR} ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
-    (rf"(?<![\w.]){_CUR} ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}"
+    (rf"(?<![\w.]){_CUR} ?/? ?(?:billions?|bn)(?!\w)|\bbillions? (?:of )?{_CUR}", 1e9),
+    (rf"(?<![\w.]){_CUR} ?/? ?(?:millions?|mn|mio\.?|mln|m)(?!\w)|(?<!\w)m{_CODE}(?!\w)|\bmillions? (?:of )?{_CUR}"
      rf"|\bmillions? (?:of )?(?:us |u\.s\. )?dollars?\b", 1e6),                    # "Million US dollar" (AB InBev)
-    (rf"(?<![\w.])(?:in)?{_CUR} ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
+    (rf"(?<![\w.])(?:in)?{_CUR} ?/? ?(?:thousands?|['’‘]000|tsd\.?|k)(?!\w)|(?<![\w.]){_CUR}000(?![\d,.])|(?<!\w)[kt]{_CODE}(?!\w)"
      rf"|\bthousands? (?:of )?{_CUR}|\bin {_CUR} ?1[,. ]?000(?!\d)|\bin ['’‘]?000['’‘]?s?\b"
      rf"|(?<![\w.]){_CODE} 1[,. ]000(?=\s+(?:notes?|consolidated|group|(?:19|20)\d\d)\b)"
      rf"|\(\s*(?:in )?{_CODE} ?1[,. ]?000\s*\)", 1e3),                                # "(DKK 1,000)", "(NOK 1000)"                               # "EUR 1,000" heading a column
@@ -477,6 +477,9 @@ def _line_rank(key: str, label: str) -> int:
                                  label) else 1
     if key == "buybacks":
         return 1 if "treasury" in label else 2       # shares bought back, not treasury shares bought for employee plans
+    if key == "operating_income":
+        return 0 if label.startswith("operating income") else 1   # a bank's "Operating income" (its income, all of it) after
+                                                                   # its "Operating result" (Erste, Raiffeisen)
     return 0
 
 
@@ -559,9 +562,16 @@ HEADER_NEAR = re.compile(r"(quarters?|years?|months|weeks|periods?) ended|\(in (
 def statement_start(text: str) -> int:
     """Where a statement printed lower on the page begins (a release's text above its statement of earnings):
     its title followed by its column header. 0 when the page opens with it, or holds none."""
-    if title_match(text):
+    if (m := title_match(text)):
+        # a chart's axis of years above the title (Signify's "2022 2023 2024 Q1 Q2 Q3 Q4"): not its column header
+        if len(re.findall(r"\b(?:19|20)\d\d\b", text[:m.start()])) >= 3 and len(header_years(text[m.end():m.end() + 200])) >= 2:
+            q = _QUAL.search(text[max(0, m.start() - 60):m.start()])
+            return m.start() - (len(q.group()) if q else 0)
         return 0
     for m in _headings(text):
+        if len(text) - m.end() <= 100:
+            continue                                         # a running footer ("Consolidated statement of cash flows 142
+                                                             # RELX Annual Report 2024"): no statement under it
         q = _QUAL.search(text[max(0, m.start() - 60):m.start()])
         return m.start() - (len(q.group()) if q else 0)     # with its "Consolidated" (AmRest, under a table of contents)
     return 0
@@ -610,6 +620,9 @@ NOT_PRIMARY = (r"(?<!owners of the )(?<!holders of the )(?<!shareholders of the 
                r"|summari[sz]ed (statements? of|financial|balance sheet|income statement)|summary of [\w ]{0,30}financial information"
                r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
                r"|\b(reporting|information|figures|results?) (by|per) (divisions?|business (areas?|units?)|regions?)\b"   # ASSA ABLOY
+               r"|\b(balance sheets?|income statements?|statements? of [a-z ]{3,40}?) extracts?\b"   # a restatement's (Ayvens' PPA update)
+               r"|\badjusted (figures|results|income statements?|measures)(?![a-z])"     # RELX's adjusted net profit, not the reported one
+               r"|\b(simple|convenience) translation\b|\btranslat(ed|ion) of the group.s consolidated financial statements into\b"   # RELX: in US dollars
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|\b(statement|position|flows?)s? (for|of) discontinued operations\b"     # F-Secure's demerged business
                r"|\bcompany (income statement|balance sheet|statements? of (financial position|profit|comprehensive|cash flows?))"   # the parent's (Dutch reports)
@@ -777,7 +790,7 @@ def _is_note_ref(f: dict, note_col: bool = False) -> bool:
     return bool(re.fullmatch(r"\d{1,2}|\(\d\)" + (r"|\(\d{1,2}\)|\d{1,2}\.\d{1,2}|\d{1,2}(,\s?\d{1,2})+" if note_col else ""), f["display"].strip()))
 
 
-NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:[a-z]{3}\.? \d{1,2}\s*[–-]\s*)?(?:\d{1,2}/\d{1,2}\s*-\s*)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
+NOTE_HEAD = re.compile(r"\bnotes?\s+(?:(?:group|company|consolidated|parent)\s+){0,3}(?:as (?:at|of)\s+)?(?:[a-z]{3}\.? \d{1,2}\s*[–-]\s*)?(?:\d{1,2}/\d{1,2}\s*-\s*)?(?:\d{1,2}\s*[–-]\s*\d{1,2}/)?(?:\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{1,2}\s+[a-z]+\.?\s+(?:19|20)\d\d|[a-z]+\.?\s+\d{1,2},?\s+(?:19|20)\d\d|(?:19|20)\d\d\b"
                        r"|[$€£]|(?:eur|usd|dkk|sek|nok|chf|gbp|pln)\b)", re.I)
 
 
@@ -934,6 +947,9 @@ def by_position(nums: list, cols: list[float], n: int) -> Optional[list]:
     for f in nums:
         i = min(range(n), key=lambda k: abs(cols[k] - _right(f)))
         if abs(cols[i] - _right(f)) > 12:
+            if len(nums) == n and re.search(r"\d[,. ]\d{3}", f["display"]):
+                return None                        # a row of amounts set apart from the columns (Bank of Cyprus' total
+                                                   # "Net cash from operating activities", shifted left): in its order
             continue
         if cells[i] is None:
             cells[i] = f
@@ -1018,7 +1034,13 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     raw = page_text
     page_text = {p: t[statement_start(t):] for p, t in page_text.items()}
     # "8." is the number of the next item ("276 8. (Payments)", a Spanish bank's cash flow), never an amount
-    facts = [f for f in facts if not re.fullmatch(r"\d{1,2}\.", f["display"].strip())]
+    facts = [f for f in facts if not re.fullmatch(r"\d{1,2}(\.\d{1,2})*\.", f["display"].strip())]   # or "2.1." (Kemira)
+    # a page whose only figures are its "Note" column (the amounts not printed as text, Agfa's income statement)
+    by_page: dict = {}
+    for f in facts:
+        by_page.setdefault(f["page"], []).append(f)
+    facts = [f for f in facts if not (len(fs := by_page[f["page"]]) >= 5 and all(re.fullmatch(r"\d{1,2}([-–]\d{1,2})?", g["display"].strip()) for g in fs)
+                                      and "x1" in f and max(g.get("x1", 0) for g in fs) - min(g.get("x1", 0) for g in fs) <= 25)]
     # under a "Note" column, a note number like "5.12" heading three rows or more of the page (a Belgian report's
     # cash flow: "Share based payments 5.12 & 5.20 28.3 29.9"): a note, never an amount
     firsts: dict = {}
@@ -1028,7 +1050,13 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     for f in firsts.values():
         if re.fullmatch(r"\d{1,2}\.\d{1,2}", f["display"].strip()):
             reps[(f["page"], f["display"].strip())] = reps.get((f["page"], f["display"].strip()), 0) + 1
-    notes = {k for k, n in reps.items() if n >= 3 and note_column(page_text.get(k[0], ""))}
+    seconds: dict = {}
+    for f in sorted(facts, key=lambda f: f.get("x1", 0)):
+        if firsts.get((f["page"], f["label"])) is not f:
+            seconds.setdefault((f["page"], f["label"]), f["display"].strip())
+    # (not one figure on rows that equal each other: a basic EPS of 4.24 that is also the diluted one, LU)
+    notes = {k for k, n in reps.items() if n >= 3 and note_column(page_text.get(k[0], ""))
+             and len({seconds.get(key) for key, f in firsts.items() if (f["page"], f["display"].strip()) == k}) > 1}
     facts = [f for f in facts if (f["page"], f["display"].strip()) not in notes or firsts.get((f["page"], f["label"])) is not f]
     carried: dict[int, str] = {}
     origin: dict[int, tuple] = {}
@@ -1182,6 +1210,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if not nums:
             continue
         n = len(header_quarters(page_text.get(page, ""))) or len(dict.fromkeys(ys))
+        if len(nums) > max(n, 2) and len({f["display"].strip() for f in nums}) == 1:
+            continue                                   # one figure in more columns than years: a row of a statement of
+                                                       # changes in equity (Kemira's "Share-based payments -2.2 -2.2 -2.2")
         # a cash flow total's label printed twice, the first one wrapped onto a subtotal ("… by operating activities" /
         # "before change in working capital 581,229"): the second row's figures
         wrapped = key in ("cfo", "cfi", "cff") and n >= 2 and len(nums) == 2 * n and re.search(
@@ -1190,6 +1221,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             nums = nums[n:]
         row = _drop_note_ref(_in_reading_order(f for f in fs if not f.get("inline")), ys, note_col.get(page, False))
         cells = None if wrapped or ifrs else by_position(row if key not in PER_SHARE else nums, cols.get(page, []), n)
+        if cells is None and not n and not ifrs and len(row) == 1 and len(cols.get(page, [])) == 2 and key not in PER_SHARE:
+            cells = by_position(row, cols[page], 2)    # years not readable as text (Ørsted's, in a font of its own): the one
+                                                       # figure of the row under the comparative column, the current one a dash
         if cells is not None and key not in PER_SHARE:
             kept = {id(f) for f in _amounts(row, key)}   # the amounts of the row, not its per-share figures or percentages
             cells = [f if f is not None and id(f) in kept else None for f in cells]
@@ -1216,9 +1250,13 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
         i = whole.find(m.group())                  # the page before the cut: "Consolidated " right before "cash flow statement"
         before = whole[max(0, i - 60):i].lower() if i > 0 else ""
+        if re.search(NOT_PRIMARY, before, re.I):
+            return 1                       # "Financial statements of the parent company" over a title the page is cut at
         return 3 if "consolidat" in head or "consolidat" in before or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t, raw[p]) for p, t in page_text.items()}
     for p, b in carried.items():
+        if titled[p] >= 2 and re.search(NOT_PRIMARY, b, re.I):
+            titled[p] = 1                              # carries on the parent company's statement of the page before
         if titled[p] == 2 and "consolidat" in b:
             titled[p] = 3                              # carries on the consolidated statement of the page before (Arctic Paper)
     for p in titled:
@@ -1266,6 +1304,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     cond = {p: condensed(t) for p, t in page_text.items()}
     # a statement page that states no scale (3M prints "(Millions…)" on all but one): the one the others state
     scales = [page_scale(t) for p, t in page_text.items() if titled[p] >= 2 and kinds[p] and page_scale(t) != 1.0]
+    if not scales:                         # none titled: two pages read or more that state it (Signify's cash flow on a page
+        scales = [page_scale(t) for t in page_text.values() if page_scale(t) != 1.0]   # with none, "in millions of €" on the others;
+        scales = scales if len(scales) >= 2 else []      # not one page of key figures in millions over statements in euros)
     doc_scale = max(set(scales), key=scales.count) if scales and len(set(scales)) == 1 else 1.0
 
     def kind_rows(pg: int, kind: str) -> int:
@@ -1326,7 +1367,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             if not cands:
                 continue
         page, nums, label, cells = max(cands, key=lambda c: (titled.get(c[0], 0) >= 2 and statement_of(key) in kinds[c[0]],
-                                                   year_of[c[0]] >= top_year, not cond[c[0]], titled.get(c[0], 0),
+                                                   year_of[c[0]] >= top_year or (not year_of[c[0]] and titled.get(c[0], 0) == 3), not cond[c[0]], titled.get(c[0], 0) if titled.get(c[0], 0) != 1 else -1,
                                                    kind_rows(c[0], statement_of(key)), page_hits[c[0]], kind_of.get(c[0]) == statement_of(key),
                                                    _line_rank(key, c[2]) - 2 * _with_other_income(key, c[2], raw.get(c[0], "")) + 8 * _printed(c[2], raw.get(c[0], "")),
                                                    len(c[1]) >= 2, -c[0],

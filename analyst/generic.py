@@ -238,7 +238,8 @@ def pdf_document(data: bytes, img_dir: Path, img_url: str, on_ocr=None) -> dict:
         bmp = pdf[i].render(scale=2.0)
         bmp.to_pil().convert("RGB").save(img_dir / f"p{i + 1}.jpg", quality=88)   # JPEG: ~50x faster than PNG
         words = pages_words[i]
-        figs = {} if i in bad else {id(f["word"]): f for f in _label_figures(words, sep)}
+        # not a figure cut by the page's right edge ("Total equity 91" for 91,xxx, a report printed narrower than its tables)
+        figs = {} if i in bad else {id(f["word"]): f for f in _label_figures(words, sep) if f["word"]["x"] + f["word"]["w"] < w - 0.5}
         keep = sorted(figs.values(), key=lambda f: -f["score"])[:MAX_FACTS_PAGE]
         keep_ids = {id(f["word"]) for f in keep}
         hsize = median([wd["h"] for wd in words]) if words else 10
@@ -406,7 +407,8 @@ def join_groups(words: list[dict]) -> list[dict]:
             same_line = abs((a["y"] + a["h"] / 2) - (wd["y"] + wd["h"] / 2)) < 0.4 * min(a["h"], wd["h"])
             h = max(a["h"], wd["h"])
             joined = None
-            if same_line and -1.5 <= gap <= 0.12 * h and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
+            # (or after a comma, a space the PDF put in: "–3, 125", a Luxembourg report's finance costs)
+            if same_line and (-1.5 <= gap <= 0.12 * h or (gap <= 0.42 * h and re.search(r"\d,$", a["t"]) and re.fullmatch(r"\d{3}(\.\d+)?\)?", wd["t"]))) and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
                     and AMOUNT.fullmatch(a["t"] + wd["t"]) and (_open(a["t"]) or re.match(r"[,.]", wd["t"]) or wd["t"].count(")") > wd["t"].count("(")):
                 joined = a["t"] + wd["t"]                 # one amount the PDF breaks into touching pieces ("23,4" "79")
             # (a bold total's space is wider: "81 449", 0.36 of its height, Danish ESEF; columns lie ten times further)
