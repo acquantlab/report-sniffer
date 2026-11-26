@@ -641,7 +641,7 @@ def statement_pages(texts: list[str]) -> list[int]:
         above = t[:title.start()]
         top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title) \
             or (title.start() < 600 and len(above.split()) < 60 and not re.search(r"\d{1,3}[,.]\d{3}(?!\d)", above)
-                and len(re.findall(r"\d{1,3}[,.]\d{3}(?!\d)", t)) >= 15)   # under running heads only, amounts below
+                and not re.search(r"\bitem\s+\d|\bexhibits?\b|\bthe following\b", above, re.I))   # running heads only, not a 10-K's list
         cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
         wide = len(set(header_years(t))) > 4       # a five- or ten-year summary ("Key figures", KONE)
