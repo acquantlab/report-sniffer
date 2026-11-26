@@ -52,7 +52,7 @@ PATTERNS: dict[str, list[str]] = {
                    r"tax(es)? expenses? \(income\)( (of|for) the (year|period))?( from continuing operations)?",
                    r"imposte sul reddito (dell'esercizio|del periodo) dell'operativit[aà] corrente"],
     "net_income": [r"(?!.*\bper (diluted |basic )?(common |ordinary )?share)"
-                   r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
+                   r"(consolidated )?net (income|profit|earnings|loss|\(loss\) income|income \(loss\)|loss \(income\)|\(loss\) earnings|earnings \(loss\)|income ?/ ?\(loss\)|earnings ?/ ?\(loss\)|\(loss\) ?/ ?income|profit ?/? ?\(loss\)|\(loss\) ?/? ?profit)( attributable to (?!.*(non-?controlling|minority|redeemable)).*)?",
                    r"(profit|\(loss\) profit|profit \(loss\)|profit ?/ ?\(loss\)) for the (year|period)( attributable to owners.*)?", r"(utile|risultato) netto( dell'esercizio| di gruppo| attribuibile.*)?",
                    r"utile dell'esercizio", r"(parent company's )?" + _RES + r" (of|for) the (year|period)",
                    r"(net )?result for the (year|period)( attributable to (shareholders|owners|equity holders) of the parent.*)?",
@@ -138,7 +138,8 @@ def match(label: str) -> Optional[str]:
     s = _clean(label)
     if not s:
         return None
-    for cand in (s, re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s)):    # or without a "Notes 6 y 18" column word
+    # or without a "Notes 6 y 18" column word; or a stray letter the PDF glued on ("equity and liabilitiesà")
+    for cand in (s, re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s), re.sub(r"(?<=[a-z]{4})[^\x00-\x7f]$", "", s)):
         for key, pats in _COMPILED.items():
             if any(p.match(cand) for p in pats):
                 return key
@@ -637,7 +638,9 @@ def statement_pages(texts: list[str]) -> list[int]:
             continue
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
-        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title)
+        above = t[:title.start()]
+        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title) \
+            or (title.start() < 600 and len(above.split()) < 60 and not re.search(r"\d{1,3}[,.]\d{3}(?!\d)", above))   # under running heads only
         cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
         wide = len(set(header_years(t))) > 4       # a five- or ten-year summary ("Key figures", KONE)
@@ -891,6 +894,16 @@ def _share_scale(metrics: dict) -> None:
             a["value"] = base * best
 
 
+def _under_investing(label: str, text: str) -> bool:
+    """Every row so labelled sits under the investing activities' heading, after the operating ones and before the
+    financing ones."""
+    hits = list(re.finditer(r"(?i)\b" + re.escape(label.strip()) + r"\s+[(\-–−]?\d", text))
+    def section(i):
+        heads = [(m.start(), m.group(1).lower()) for m in re.finditer(r"(?i)\b(investing|financing|operating) activities", text[:i])]
+        return heads[-1][1] if heads else ""
+    return bool(hits) and all(section(m.start()) == "investing" for m in hits)
+
+
 def _continued(label: str, text: str) -> bool:
     """A label that ends a longer one wrapped onto its line ("Income (loss) before equity in earnings of non-consolidated
     companies and" / "income tax 730,175", Tenaris): printed in lower case after a word that runs on."""
@@ -899,7 +912,7 @@ def _continued(label: str, text: str) -> bool:
                               for m in hits)
 
 
-def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict] = None) -> dict:
+def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict] = None, ocr: Optional[set] = None) -> dict:
     """facts: [{id, label, value, display, page}] -> {"metrics", "currency", "years", "periods"} like financials.extract()."""
     # the column header, period and scale of a page are those of the statement on it, wherever it starts
     raw = page_text
@@ -977,6 +990,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
                 continue                                   # only per-share figures: not the amount
         if not key or _continued(label, raw.get(page, "")):
             continue
+        # a bare "Dividends" under the investing activities: dividends received (Grifols)
+        if key == "dividends" and _clean(label) == "dividends" and _under_investing(label, raw.get(page, "")):
+            continue
         nums = _amounts(_drop_note_ref(nums, ys, note_col.get(page, False)), key)
         # under a "Notes" column, a note then one amount and a dash: "Dividends to Majorel shareholders 17 (19) -"
         if note_col.get(page) and len(ys) == 2 and len(nums) == 2 and _is_note_ref(nums[0], True) and re.search(
@@ -987,8 +1003,14 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if not nums:
             continue
         n = len(header_quarters(page_text.get(page, ""))) or len(dict.fromkeys(ys))
+        # a cash flow total's label printed twice, the first one wrapped onto a subtotal ("… by operating activities" /
+        # "before change in working capital 581,229"): the second row's figures
+        wrapped = key in ("cfo", "cfi", "cff") and n >= 2 and len(nums) == 2 * n and re.search(
+            re.escape(label.strip()) + r"\s+(before|excluding|prior to)\b", raw.get(page, ""), re.I)
+        if wrapped:
+            nums = nums[n:]
         row = _drop_note_ref(_in_reading_order(f for f in fs if not f.get("inline")), ys, note_col.get(page, False))
-        cells = by_position(row if key not in PER_SHARE else nums, cols.get(page, []), n)
+        cells = None if wrapped else by_position(row if key not in PER_SHARE else nums, cols.get(page, []), n)
         if cells is not None and key not in PER_SHARE:
             kept = {id(f) for f in _amounts(row, key)}   # the amounts of the row, not its per-share figures or percentages
             cells = [f if f is not None and id(f) in kept else None for f in cells]
@@ -1071,24 +1093,30 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     # a summary or a breakdown, not the statement (2 or 3 years; 4 columns with a quarter's): read from it only when
     # nothing else gives the line (a bank's five-year overview, its operating result printed nowhere else as such)
     wide = {p for p, t in page_text.items() if len(set(header_years(t))) > 4}
+    # statements of two kinds or more titled in the PDF's own text: the pages read by OCR only for a line they lack
+    ocr_off = bool(ocr) and len({k for p in page_text if p not in ocr and titled.get(p, 0) >= 2 for k in kinds.get(p, ())}) >= 2
     passes = [(k, [c for c in cs if c[0] not in wide]) for k, cs in found.items()] + \
              [(k, cs) for k, cs in found.items() if any(c[0] in wide for c in cs)]
     for key, cands in passes:
         if key in metrics:
             continue
         cands = [c for c in cands if c[0] not in toc]  # not a table of contents' page numbers ("Revenue ……… 62")
+        # a statement in the PDF's own text over one read by OCR from an image (Antares Vision: the group's statements
+        # as text, the parent company's as pictures further on)
+        if ocr_off and any(c[0] in ocr for c in cands):
+            cands = [c for c in cands if c[0] not in ocr] or cands
         if not cands:
             continue
-        has_statement = any(statement_of(key) in ks and titled.get(p, 0) >= 2 for p, ks in kinds.items())
+        has_statement = any(statement_of(key) in ks and titled.get(p, 0) >= 2 for p, ks in kinds.items() if not (ocr_off and p in ocr))
         if has_statement:
             # with the consolidated statement at hand, its lines from it only: not a figure elsewhere (a segment's, a
             # quarter's, the MD&A's), the parent company's or the guarantors' statements, the statement of equity
             cands = [c for c in cands if statement_of(key) in kinds[c[0]] and titled.get(c[0], 0) >= 2]
             # with the group's consolidated statement at hand, not one titled without "consolidated": the parent
             # company's own statements, which European reports print after the group's ("Statement of Financial Position")
-            if any(statement_of(key) in kinds[p] and titled[p] == 3 for p in page_text):
+            if any(statement_of(key) in kinds[p] and titled[p] == 3 for p in page_text if not (ocr_off and p in ocr)):
                 cands = [c for c in cands if titled[c[0]] == 3]
-            if any(year_of[p] >= top_year and statement_of(key) in kinds[p] and titled[p] >= 2 for p in page_text):
+            if any(year_of[p] >= top_year and statement_of(key) in kinds[p] and titled[p] >= 2 for p in page_text if not (ocr_off and p in ocr)):
                 cands = [c for c in cands if not 0 < year_of[c[0]] < top_year]  # not an investee's older statements
                 if not cands:
                     continue

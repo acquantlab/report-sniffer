@@ -376,7 +376,7 @@ def _statement_metrics(g: dict) -> Optional[dict]:
     texts = {p["n"]: t for p, t in zip(g["pages"], g["page_text"])}
     every = g.get("all_text") or []
     before = {p["n"]: every[p["n"] - 2][-3000:] for p in g["pages"] if 1 < p["n"] <= len(every) + 1}
-    x = statements.extract(g["facts"], texts, before)
+    x = statements.extract(g["facts"], texts, before, set(g.get("ocr") or ()))
     if not _enough(x["metrics"]):
         return None
     statements.note_lines(x, every, " ".join(texts.values()))    # interest expense, share-based pay only in a note
