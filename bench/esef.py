@@ -47,7 +47,7 @@ def select(per: int, end: str) -> list[dict]:
         for f in data:
             a = f["attributes"]
             lei = a["report_url"].split("/")[1] if a.get("report_url") else ""
-            if not a.get("json_url") or not re.search(r"-en\.x?html?$", a["report_url"] or "") or lei in every:
+            if not a.get("json_url") or not re.search(r"[-_]en\.x?html?$", a["report_url"] or "") or lei in every:
                 continue                                   # English reports, one per company (a company files in one country)
             seen.add(lei)
             every.add(lei)
@@ -93,7 +93,12 @@ def truth(f: dict) -> dict:
         except ValueError:
             continue
         by[dims["concept"].split(":")[-1]].append((dims.get("period", ""), v))
-    gt = {"_end": f["end"]}
+    years = [e for e in (_day(p.split("/")[1]) for vs in by.values() for p, _ in vs if "/" in p
+                         and 340 <= (_day(p.split("/")[1]) - _day(p.split("/")[0])).days <= 380)]
+    top = max(set(years), key=years.count) if years else end
+    if 350 <= (end - top).days <= 380 and sum(abs((e - end).days) <= 7 for e in years) < 0.1 * years.count(top):
+        end = top                                      # a report indexed under the year after its own (Millicom's 2023)
+    gt = {"_end": end.isoformat()}
     for key, spec in F.METRICS.items():
         vals = {"cur": defaultdict(list), "prev": defaultdict(list)}
         for c in A.concepts(F, key):
@@ -129,6 +134,15 @@ def english(pdf_path: Path) -> bool:
     return len(re.findall(r"\b(the|and|of)\b", t, re.I)) >= 0.03 * max(1, len(re.findall(r"\w+", t)))
 
 
+def flows_add_up(m: dict, w: str) -> bool:
+    """Operating + investing + financing cash flows (+ exchange rates), as read, equal the change in cash read."""
+    v = [((m.get(k) or {}).get(w) or {}).get("value") for k in ("cfo", "cfi", "cff", "cash_change", "fx_effect")]
+    if None in v[:4]:
+        return False
+    tol = 0.002 * max(abs(x) for x in v[:3])
+    return abs(sum(v[:3]) - v[3]) <= tol or (v[4] is not None and abs(sum(v[:3]) + v[4] - v[3]) <= tol)
+
+
 def run(f: dict) -> dict:
     try:
         if not english(to_pdf(f)):
@@ -149,6 +163,10 @@ def run(f: dict) -> dict:
                 st = "explained"                       # Elkem tags its EPS a hundredth of the printed one (0.0011 for 0.11;
                                                        # 0.1509, its basic EPS, for the diluted 15.04); a hundred times it the other
                                                        # way (1076 for PLN 10.76 printed)
+            if st == "wrong" and key in ("cfo", "cfi", "cff", "fx_effect") and o and flows_add_up(r["metrics"], w) and \
+                    any(abs(o["value"] + v) <= 0.001 * abs(v) for vs in cands.values() for v in vs):
+                st = "explained"                       # the tag's sign is the other: the flows as printed add up to the printed
+                                                       # change in cash (Antares Vision tags its operating cash flow negative)
             if st == "wrong" and str(((r["periods"] or {}).get("flow") or [""])[0]).startswith("Q") and S.statement_of(key) != "bs":
                 st = "explained"                       # the app names the columns a quarter (DFDS's Q4 report): not the year's
             if st == "none":
