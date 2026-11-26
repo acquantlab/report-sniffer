@@ -1118,7 +1118,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         qs = header_quarters(text)
         dashed = False
         pct = len(ys) == 2 and re.search(r"\b(?:19|20)\d\d\s*%\s.{0,60}?\b(?:19|20)\d\d\s*%(?!\w)", text[:1500], re.S)
-        if cells is not None and any(cells) and not (pct and len(nums) >= 3):
+        # "Group | Company", two columns each: the group's first, as the row prints them (not by position)
+        side = len(ys) >= 2 and len(nums) == 2 * len(ys) and re.search(r"\bgroup\b.{0,40}?\b(company|parent)\b", text[:900], re.I | re.S)
+        if cells is not None and any(cells) and not (pct and len(nums) >= 3) and not side:
             nums = cells                               # by where each figure sits under the column headers
             if ys and not qs and len(cells) == len(ys) and None in cells:
                 dashed = _with_dashes([f for f in cells if f is not None], label, text, len(ys)) == cells \
@@ -1133,7 +1135,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if pct and len(amts) >= 2 and len(amts) < len(nums):
             cur_f, prev_f = (amts[0], amts[1]) if ys[0] > ys[1] else (amts[1], amts[0])
         # each year's line, then its subtotal ("Cash and cash equivalents 318,127 4,981,173 584,681 4,287,672", Tenaris)
-        elif statement_of(key) == "bs" and len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
+        elif statement_of(key) == "bs" and not side and len(ys) == 2 and ys[0] == ys[1] + 1 and not qs and len(nums) == 4 and all(nums) and cells is None \
                 and abs(nums[1]["value"]) >= abs(nums[0]["value"]) and abs(nums[3]["value"]) >= abs(nums[2]["value"]) \
                 and not re.search(r"\b(three|six|nine|3|6|9) months\b|\bquarters?\b|\bhalf[- ]year\b|\bQ[1-4]\b", text[:1500], re.I):
             cur_f, prev_f = nums[0], nums[2]
@@ -1304,11 +1306,30 @@ def _close(a: float, b: float, tol: float = 0.005) -> bool:
     return abs(a - b) <= max(tol * max(abs(a), abs(b)), 1.0)
 
 
+def _tax_sign(metrics: dict) -> None:
+    """The tax's sign by the statement's own arithmetic: profit before tax less the tax is the profit for the year
+    ("PROFIT BEFORE TAX -151 864 / Taxes -20 789 / NET PROFIT -131 075": a tax income, not an expense)."""
+    tax, pre = metrics.get("income_tax"), metrics.get("pretax_income")
+    after = metrics.get("profit_total") or metrics.get("net_income")
+    if not (tax and pre and after):
+        return
+    for w in ("cur", "prev"):
+        t, p, a = (m.get(w) for m in (tax, pre, after))
+        if not (t and p and a) or not t["value"]:
+            continue
+        tol = max(abs(p["value"]), abs(a["value"])) * 0.002 + 1
+        off, flipped = abs(p["value"] - t["value"] - a["value"]), abs(p["value"] + t["value"] - a["value"])
+        # within the minorities' share when the profit is the owners' (net income attributable)
+        if off > tol and (flipped <= tol or flipped <= off / 4 and flipped <= 0.05 * abs(a["value"])):
+            tax[w] = {**t, "value": -t["value"]}
+
+
 def consistent(metrics: dict) -> dict:
     """Figures that the statements' own arithmetic contradicts are dropped, year by year: a line not read rather
     than a line read wrong (a column shifted, an amount the PDF cut short, a figure from another table).
     Total assets = total equity and liabilities; a part (current assets, cash; current liabilities) no larger than
     its total. In place; returns the keys and years dropped."""
+    _tax_sign(metrics)
     dropped = {}
 
     def v(k, w):
