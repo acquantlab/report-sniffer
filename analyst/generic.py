@@ -409,7 +409,8 @@ def join_groups(words: list[dict]) -> list[dict]:
             if same_line and -1.5 <= gap <= 0.12 * h and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
                     and AMOUNT.fullmatch(a["t"] + wd["t"]) and (_open(a["t"]) or re.match(r"[,.]", wd["t"]) or wd["t"].count(")") > wd["t"].count("(")):
                 joined = a["t"] + wd["t"]                 # one amount the PDF breaks into touching pieces ("23,4" "79")
-            elif same_line and -1 <= gap <= 0.33 * h and re.fullmatch(r"[(\-−–]?[€$£]?\d{1,3}( \d{3})*", a["t"]) \
+            # (a bold total's space is wider: "81 449", 0.36 of its height, Danish ESEF; columns lie ten times further)
+            elif same_line and -1 <= gap <= 0.42 * h and re.fullmatch(r"[(\-−–]?[€$£]?\d{1,3}( \d{3})*", a["t"]) \
                     and re.fullmatch(r"\d{3}([.,]\d+)?\)?%?", wd["t"]):
                 joined = a["t"] + " " + wd["t"]
             if joined:
