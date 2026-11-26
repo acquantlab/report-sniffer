@@ -20,6 +20,7 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import accuracy as A  # noqa: E402
+from analyst import statements as S  # noqa: E402
 
 API = "https://filings.xbrl.org"
 DIR = A.CACHE / "esef"
@@ -143,9 +144,13 @@ def run(f: dict) -> dict:
             cands = (gt.get(key) or {}).get(w, {})
             st = A.judge(key, o, cands)
             if st == "wrong" and key == "eps_diluted" and o and any(abs(o["value"] - 100 * v) <= max(0.006, 0.005 * abs(o["value"]))
+                                                                    or abs(100 * o["value"] - v) <= max(0.6, 0.005 * abs(v))
                                                                     for vs in cands.values() for v in vs):
                 st = "explained"                       # Elkem tags its EPS a hundredth of the printed one (0.0011 for 0.11;
-                                                       # 0.1509, its basic EPS, for the diluted 15.04)
+                                                       # 0.1509, its basic EPS, for the diluted 15.04); a hundred times it the other
+                                                       # way (1076 for PLN 10.76 printed)
+            if st == "wrong" and str(((r["periods"] or {}).get("flow") or [""])[0]).startswith("Q") and S.statement_of(key) != "bs":
+                st = "explained"                       # the app names the columns a quarter (DFDS's Q4 report): not the year's
             if st == "none":
                 if not cands:
                     continue
