@@ -126,6 +126,8 @@ def _clean(label: str) -> str:
     s = re.sub(r"[\$€£]", "", s)
     s = re.sub(r"\s*\((see )?(notes?|nota)\b[^)]*\)?\s*$", "", s)           # "(Notes 1 and 2)", "(See Note", "(Note" cut by the line
     s = re.sub(r"(?<=[\w)])\s*/\s*(?=\()|(?<=\))\s*/\s*(?=\w)", " ", s)        # "income/(loss)", "(used)/provided"
+    s = re.sub(r"\b(profit|income|earnings)(\s*/\s*| or | and )(loss)\b", r"\1 (\3)", s)   # "Profit/loss for the period" (AmRest), "… profit or loss for the year"
+    s = re.sub(r"\s+in (eur|usd|gbp|chf|sek|nok|dkk|pln|€|\$)$", "", s)          # "… per ordinary share in EUR"
     s = re.sub(r"[–—]+", " - ", s)
     s = re.sub(r"^total(?=[a-z])", "total ", s)                              # "TOTALASSETS" from a PDF without spaces
     s = re.sub(r"\s+", " ", s).strip(" :.,;")
@@ -369,7 +371,10 @@ def header_years(text: str) -> list[int]:
                                       text[max(0, pos - 25):pos], re.I)
         # or in the page's heading ("ANNUAL REPORT 2022 INCOME STATEMENT – GROUP (MSEK) Note 2022 2021", ITAB)
         wordy = len(re.findall(r"[A-Za-z]{2,}", text[run[0][0] + 4:run[1][0]])) >= 3
-        if len(ys) == 3 and ys[0] == ys[1] > ys[2] and (dated(run[0][0]) or wordy) and not dated(run[1][0]):
+        # (or the title's date over a header of dates: "for the year ended 31 December 2022  YEAR ENDED  Note
+        # 31 December 2022  31 December 2021", AmRest)
+        again = re.search(r"\b(ended|notes?)\b", text[run[0][0] + 4:run[1][0]], re.I)
+        if len(ys) == 3 and ys[0] == ys[1] > ys[2] and (dated(run[0][0]) or wordy) and (not dated(run[1][0]) or again):
             ys = ys[1:]
     # a dateline running into the header ("… 2022, 2021, and 2020  2022 2021 2020" read as 2020 2022 2021 2020):
     # columns are in order (2022 2021 2020), or the same block twice (2023 2022 2023 2022)
@@ -504,7 +509,8 @@ def statement_start(text: str) -> int:
     if title_match(text):
         return 0
     for m in _headings(text):
-        return m.start()
+        q = _QUAL.search(text[max(0, m.start() - 60):m.start()])
+        return m.start() - (len(q.group()) if q else 0)     # with its "Consolidated" (AmRest, under a table of contents)
     return 0
 
 
@@ -571,14 +577,21 @@ def _head(text: str, n: int = 300) -> str:
     return BOILERPLATE.sub(" ", text[:n + 200])[:n]
 
 
+def _bare(text: str) -> str:
+    """Without the footer "The above consolidated statement of changes in equity should be read in conjunction with …"
+    (AmRest): it names a statement but titles none."""
+    return re.sub(r"(?i)the (above|accompanying) [^.\n]{0,90}should be read in conjunction[^\n]*", "", text)
+
+
 def _continues(text: str) -> bool:
     """A page that carries on the statement of the page before: no title of its own, not notes, statement rows; or
     rows of it above the next statement's title, lower down the page (UPM prints them on, one after another)."""
     t = title_match(text)
     if t and t.start() > 600 and not re.search(r"notes to|report of independent|discussion and analysis", _head(text), re.I):
         text = text[:t.start()]
+    bare = _bare(text)
     if title_match(text) or re.search(r"notes to|report of independent|discussion and analysis", _head(text), re.I) \
-            or EQ_TITLE.search(text[:300] + " " + text[-300:]):
+            or EQ_TITLE.search(bare[:300] + " " + bare.rstrip()[-300:]):
         return False
     rows = 0
     for line in text.splitlines():
@@ -718,7 +731,7 @@ def _drop_note_ref(nums: list, years: list, note_col: bool = False) -> list:
     """A "Note" column before the amounts ("Net sales  4  12,450  11,200"): a small whole number in front of
     more figures than the page has year columns. A two-digit amount in its own column stays."""
     if len(nums) >= 2 and _is_note_ref(nums[0], note_col):
-        cols = len(years) if len(years) >= 2 else 2
+        cols = len(set(years)) if len(set(years)) >= 2 else 2     # "for the year ended 31 December 2022 … Note 2022 2021": two
         if len(nums) > cols and len(nums) % cols:      # not a row printed twice ("$ 46 $ 303 $ 1,203" and again)
             return nums[1:]
     return nums
@@ -948,7 +961,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             last = [foot]                              # the statement titled at the foot of the page before
         if last and not title_match(page_text[p]) \
                 and not re.search(r"notes to|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
-                                  _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?", page_text[p][-300:], re.I):
+                                  _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?(?! change)", _bare(page_text[p]).rstrip()[-300:], re.I):
             prev = raw[q][last[-1].start():]
             row = re.search(r"\(?\$?\s?\d{1,3}(,\d{3})+", prev)           # the header ends where the first amount is
             page_text[p] = prev[:min(row.start() if row else 300, 400)] + " " + page_text[p]
@@ -992,11 +1005,14 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if label not in seen:
             seen[label] = None
             ws = label.split()
-            # not a label in title case, whose words all begin with a capital ("Other Operating Income"), but after "Less:"
+            # a label in title case, whose words all begin with a capital ("Other Operating Income", "TOTAL NET INCOME"), is one
             title = all(w[:1].isupper() or w.lower() in _GLUE for w in ws)
             if len(ws) >= 3 and not match(label):
                 for i in range(1, len(ws) - 1):
-                    if (not title or ws[i - 1].endswith(":")) and ws[i][:1].isupper() and ws[i - 1].lower() not in _GLUE | {"other", "total", "net", "non"} and match(" ".join(ws[i:])):
+                    # in title case, only past side letters ("C A TOTAL ASSETS", "A. CASH FLOWS FROM …"), "Less:" or "Consolidated"
+                    side = all(len(w.strip(".")) <= 2 for w in ws[:i]) or ws[i - 1].endswith(":") or " ".join(ws[:i]).lower() in ("consolidated", "group")
+                    if (not title or side) and ws[i][:1].isupper() and ws[i - 1].lower() not in _GLUE | {"other", "total", "net", "non", "gross"} \
+                            and match(" ".join(ws[i:])):
                         seen[label] = " ".join(ws[i:])
                         split.add(label)
                         break
