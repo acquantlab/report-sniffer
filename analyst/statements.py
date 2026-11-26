@@ -134,6 +134,9 @@ def _clean(label: str) -> str:
     return s
 
 
+_GLUE = {"of", "the", "to", "and", "in", "for", "from", "on", "by", "with", "at", "attributable", "&", "-", "–"}
+
+
 def match(label: str) -> Optional[str]:
     s = _clean(label)
     if not s:
@@ -387,6 +390,10 @@ def page_period(text: str) -> dict:
         pos = re.search(pat, lo)
         if pos and (months is None or pos.start() < months[1]):
             months = (m, pos.start())
+    # columns headed by quarters alone ("2022 2021 DKK m Note Q4 Q4", a Q4 report whose full-year columns the print lost)
+    qc = QUARTER_COLS.search(text[:1500])
+    if months is None and qc and not YTD_COLS.search(text[:1500]) and not re.search(r"full[- ]year|\bFY\b|\b12M\b|\bjan(uary)?\.?\s*[-–]\s*dec", text[:1500], re.I):
+        months = (3, qc.start())
     md = re.search(r"(?:ended|ending|as of|as at|at)\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b", lo)
     fq = re.search(r"\b(first|second|third|fourth)[- ]quarter\b", lo)
     instant = months is None and bool(re.search(r"balance sheet|financial position|as of|as at|stato patrimoniale|situazione patrimoniale", lo))
@@ -395,7 +402,8 @@ def page_period(text: str) -> dict:
         md = re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b", lo[:400])
     return {"months": months[0] if months else None, "month": MONTH_NO[md.group(1)] if md else 12,
             "day": int(md.group(2)) if md else 31, "instant": instant,
-            "fiscal_q": ["first", "second", "third", "fourth"].index(fq.group(1)) + 1 if fq and not md else None}
+            "fiscal_q": ["first", "second", "third", "fourth"].index(fq.group(1)) + 1 if fq and not md else
+                        int(qc.group()[1]) if months and months[0] == 3 and qc and months[1] == qc.start() and not md else None}
 
 
 # which statement each item belongs to: its figure is taken from that statement when the document has it
@@ -484,7 +492,8 @@ EQ_TITLE = re.compile(r"statements? of (consolidated )?(changes in )?(\w+ )?(sto
                       r"|statements? of (changes in )?equity|prospetto delle variazioni del patrimonio netto", re.I)
 
 
-HEADER_NEAR = re.compile(r"(quarters?|years?|months|weeks|periods?) ended|\(in (millions|thousands|billions)|\((millions|thousands|dollars)|esercizio|migliaia|milioni", re.I)
+HEADER_NEAR = re.compile(r"(quarters?|years?|months|weeks|periods?) ended|\(in (millions|thousands|billions)|\((millions|thousands|dollars)|esercizio|migliaia|milioni"
+                         r"|\((dkk|sek|nok|eur|usd|chf|pln|€) ?(1[,. ]000|'000|thousands?|millions?)\)", re.I)   # "Balance Sheet Assets (DKK 1,000)"
 
 
 def statement_start(text: str) -> int:
@@ -971,11 +980,34 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     for f in facts:
         if f.get("y") is not None:
             on_row.setdefault((f["page"], round(f["y"])), set()).add(f["label"])
+    seen: dict[str, Optional[str]] = {}
+    signed: set = set()
+
+    def own(label: str) -> Optional[str]:
+        # a label run into from the left column's ("Taxes Dividends paid", "Change in value of biological assets Net
+        # cash used in financing activities", Stora Enso's side-by-side statements): the line its last words name
+        if label not in seen:
+            seen[label] = None
+            ws = label.split()
+            if len(ws) >= 3 and not match(label):
+                for i in range(1, len(ws) - 1):
+                    if ws[i][:1].isupper() and ws[i - 1].lower() not in _GLUE and match(" ".join(ws[i:])):
+                        seen[label] = " ".join(ws[i:])
+                        break
+                # or a place and date the page prints beside it ("Total liabilities Athens, April", the signatures)
+                m = re.search(r"\s[A-Z][a-z]+, (January|February|March|April|May|June|July|August|September|October|November|December)\b.*$", label)
+                if not seen[label] and m and match(label[:m.start()]):
+                    seen[label] = label[:m.start()]
+                    signed.add(label)
+        return seen[label]
     for f in facts:
         label = f["label"]
         mates = on_row.get((f["page"], round(f["y"])), set()) if f.get("y") is not None else set()
         tail = next((m for m in mates if m != label and label.endswith(" " + m) and m.lower().startswith("total")), None)
-        groups.setdefault((f["page"], tail or label), []).append(f)
+        name = tail or own(label) or label
+        if label in signed:
+            f = {**f, "inline": False}              # a cell after the date ("April 10, 2023 1,330,729"), not in a sentence
+        groups.setdefault((f["page"], name), []).append(f)
     # a lone figure a line off the row its label heads, the row's own figures being several (a page number or a stray
     # amount under "Net increase/(decrease) in cash … (Α) 6,565 5,561 (412) 5,598", Piraeus)
     for g, fs in groups.items():
@@ -1093,6 +1125,10 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     year_of = {p: max(header_years(t) or [0]) for p, t in page_text.items()}
     top_year = max((year_of[p] for p in page_text if titled[p] >= 2 and kinds[p]), default=0)
 
+    def one_year(p: int) -> int:     # the one year a column header names: "(€, in millions, except per share data) Notes 2020"
+        m = re.search(r"\b(millions|thousands)\b[^0-9]{0,60}\b(20\d\d)\b(?![\s,.]*\d)", page_text[p][:2500])
+        return int(m.group(2)) if m else 0
+
     def condensed(t: str) -> bool:
         m = title_match(t)
         # "Balance sheet condensed by main items"; a bank's "Reclassified consolidated income statement" after the official one
@@ -1143,6 +1179,9 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
                 cands = [c for c in cands if not 0 < year_of[c[0]] < top_year]  # not an investee's older statements
                 if not cands:
                     continue
+            # a statement whose latest column is two years before the report's: columns the print lost (ASML 2022
+            # printing its 2020 column alone), not this year's figures
+            cands = [c for c in cands if not 0 < (year_of[c[0]] or one_year(c[0])) <= top_year - 2]
             if not cands:
                 continue
         else:
