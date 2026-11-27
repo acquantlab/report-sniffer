@@ -67,6 +67,7 @@ PATTERNS: dict[str, list[str]] = {
                     r"(?=.*(?<!un)diluted)(earnings|loss) per (common |ordinary )?share.*",
                     r"(?=.*(?<!un)diluted)(earnings|net income|net loss|income|loss)( \(loss\))? per (common |ordinary )?share.*",
                     r".* per diluted (common |ordinary )?share",
+                    r"basic and diluted (\(loss\) |\(net loss\) )?(net )?(earnings|income|loss|profit)( \(loss\))? per (common |ordinary )?share.*",   # Lundin Mining
                     r"diluted", r"utile (netto )?(diluito )?per azione( diluito)?( \(.*\))?"],
     "diluted_shares": [r"weighted[- ]average (number of )?(common |ordinary )?shares.*diluted.*", r"diluted (weighted[- ]average )?shares.*"],
     "opex_total": [r"total operating (expenses|costs and expenses)", r"total costs and expenses", r"(totale )?costi operativi"],
@@ -152,7 +153,9 @@ def match(label: str) -> Optional[str]:
     if not s:
         return None
     # or without a "Notes 6 y 18" column word; or a stray letter the PDF glued on ("equity and liabilitiesà")
-    for cand in (s, re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s), re.sub(r"(?<=[a-z]{4})[^\x00-\x7f]$", "", s)):
+    # or a lettered note after it ("Tax expense B.6.", Millicom)
+    for cand in (s, re.sub(r"(?<=\w)\s+notes?( y| and| &)?$", "", s), re.sub(r"(?<=[a-z]{4})[^\x00-\x7f]$", "", s),
+                 re.sub(r"(?<=[a-z]{3})\s+[a-z](\.\d{1,2})+\.?$", "", s)):
         for key, pats in _COMPILED.items():
             if any(p.match(cand) for p in pats):
                 return key
@@ -621,7 +624,8 @@ NOT_PRIMARY = (r"(?<!owners of the )(?<!holders of the )(?<!shareholders of the 
                r"|results? of the segments?\b|\bby (operating |business |reportable )?segments?\b"
                r"|\b(reporting|information|figures|results?) (by|per) (divisions?|business (areas?|units?)|regions?)\b"   # ASSA ABLOY
                r"|\b(balance sheets?|income statements?|statements? of [a-z ]{3,40}?) extracts?\b"   # a restatement's (Ayvens' PPA update)
-               r"|\badjusted (figures|results|income statements?|measures)(?![a-z])"     # RELX's adjusted net profit, not the reported one
+               r"|\badjusted (figures|results|income statements?|measures)(?![a-z])"
+               r"|\b(income statement|balance sheet), key ratios\b"                    # a bank's division (UniCredit's Central Europe)     # RELX's adjusted net profit, not the reported one
                r"|\b(simple|convenience) translation\b|\btranslat(ed|ion) of the group.s consolidated financial statements into\b"   # RELX: in US dollars
                r"|\bfor the (\d(st|nd|rd|th)|first|second|third|fourth) quarter of (19|20)\d\d\b|on a ?proportionate basis"
                r"|\b(statement|position|flows?)s? (for|of) discontinued operations\b"     # F-Secure's demerged business
@@ -661,10 +665,10 @@ def _continues(text: str) -> bool:
     """A page that carries on the statement of the page before: no title of its own, not notes, statement rows; or
     rows of it above the next statement's title, lower down the page (UPM prints them on, one after another)."""
     t = title_match(text)
-    if t and t.start() > 600 and not re.search(r"notes to|report of independent|discussion and analysis", _head(text), re.I):
+    if t and t.start() > 600 and not re.search(r"notes to\b|report of independent|discussion and analysis", _head(text), re.I):
         text = text[:t.start()]
     bare = _bare(text)
-    if title_match(text) or re.search(r"notes to|report of independent|discussion and analysis", _head(text), re.I) \
+    if title_match(text) or re.search(r"notes to\b|report of independent|discussion and analysis", _head(text), re.I) \
             or EQ_TITLE.search(bare[:300] + " " + bare.rstrip()[-300:]):
         return False
     rows = 0
@@ -713,6 +717,12 @@ def _caps_title(t: str, title) -> bool:
     return title.start() < 1000 and line.isupper() and len(line) < 80 and not re.search(r"\d[,.]\d{3}", t[:title.start()])
 
 
+
+def not_primary(text: str):
+    """Not the group's own statement, as NOT_PRIMARY says: on the text with its line breaks as spaces ("Equity
+    attributable to the Owners of" / "the parent company", Italgas, is the group's)."""
+    return re.search(NOT_PRIMARY, re.sub(r"\s+", " ", text), re.I)
+
 def statement_pages(texts: list[str]) -> list[int]:
     """0-based pages of the primary statements (income, balance sheet, cash flows): a page titled as one near its
     top and full of figures; consolidated before parent-company, the statement itself before its analysis or notes.
@@ -725,7 +735,7 @@ def statement_pages(texts: list[str]) -> list[int]:
         t = t[start:]
         head = _head(t)                                 # not the footer some PDFs give first ("… Notes to …")
         kind = page_statement(t)
-        if not kind or re.search(r"analysis of|notes to|discussion and analysis|report of independent|exhibits and financial statement schedules", head, re.I):
+        if not kind or re.search(r"analysis of|notes to\b|discussion and analysis|report of independent|exhibits and financial statement schedules", head, re.I):
             continue
         title = title_match(t)
         if not title or not (HEADER_NEAR.search(t[title.end():title.end() + 300]) or header_years(t[title.end():title.end() + 300])
@@ -737,13 +747,17 @@ def statement_pages(texts: list[str]) -> list[int]:
         # the statement itself opens its page (or closes it, in PDFs that give the title last): a table titled so in a
         # note or the MD&A has text above it
         above = t[:title.start()]
-        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title) \
+        # or right under the end of the statement before it (Italgas' income statement under its balance sheet's
+        # "TOTAL LIABILITIES AND EQUITY …" / "The accompanying notes are an integral part of …")
+        closes = re.search(r"(integral part of (these|this|the)\b[^.]{0,80}?statements?\.?|\btotal (liabilities and (\w+['’]? )?equity|equity and liabilities)"
+                           r"[\s\d,.()\-–]*)\s*(consolidated\s+)?$", above[-400:], re.I)
+        top = (start == 0 and title.start() < 200) or title.start() > len(t) - 250 or _caps_title(t, title) or bool(closes) \
             or (title.start() < 600 and len(above.split()) < 60 and not re.search(r"\d{1,3}[,.]\d{3}(?!\d)", above)
                 and not re.search(r"\bitem\s+\d|\bexhibits?\b|\bthe following\b", above, re.I))   # running heads only, not a 10-K's list
-        cond = bool(re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
+        cond = bool(re.search(r"condensed|reclassified", t[max(0, title.start() - 60):title.end() + 30], re.I)) or bool(QUARTER_COLS.search(t[title.end():title.end() + 300]))
         cents = len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5      # a company's statutory accounts, to the cent
         wide = len(set(header_years(t))) > 4       # a five- or ten-year summary ("Key figures", KONE)
-        rank = (not re.search(NOT_PRIMARY, head, re.I) and not cents and not wide, top, "consolidat" in (head + " " + title.group()).lower(),
+        rank = (not not_primary(head) and not cents and not wide, top, "consolidat" in (head + " " + t[max(0, title.start() - 60):title.end()]).lower(),
                 not re.search(r"comprehensive", head, re.I), not cond, figs)
         # alike, the earlier one: a report prints the group's statements before the parent company's (VERBUND: 54 and 63
         # figures), unless the later one is much fuller (the statement after a table of contents naming it: 20 and 39)
@@ -758,7 +772,7 @@ def statement_pages(texts: list[str]) -> list[int]:
         title = title_match(t)
         kind = page_statement(t)
         if kind and title and title.start() > len(t) - 300 and len(FIGURES.findall(t)) < 12 and _continues(texts[i + 1]):
-            rank = (not re.search(NOT_PRIMARY, t[:300], re.I), True, "consolidat" in t[max(0, title.start() - 60):title.end()].lower(),
+            rank = (not not_primary(t[:300]), True, "consolidat" in t[max(0, title.start() - 60):title.end()].lower(),
                     not re.search(r"comprehensive", title.group(), re.I),
                     not re.search(r"condensed", t[max(0, title.start() - 60):title.end() + 30], re.I), len(FIGURES.findall(texts[i + 1])))
             if kind not in best or rank > best[kind][0]:
@@ -823,7 +837,7 @@ PS_FIGURE = re.compile(r"\(?-?\d{1,3}\.\d{2,3}\)?")
 
 def is_per_share(f: dict) -> bool:
     """A figure printed like an amount per share: "1.94", "(0.82)", "($1.12)", "$ 3.58"."""
-    shown = re.sub(r"[$€£\s]", "", f["display"])
+    shown = re.sub(r"[$€£\s]|(?<=\d)p(?=\)?$)", "", f["display"])          # (or in pence: "103.1p")
     # "4.537" read as 4,537 (a document whose thousands are dots) is an amount, not 4.537 a share
     return bool(PS_FIGURE.fullmatch(shown)) and not (re.search(r"\.\d{3}\)?$", shown) and abs(f.get("value") or 0) >= 1000)
 
@@ -1075,7 +1089,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             src, last, hops = *origin[q][:2], 2        # a statement over three pages (ALD's cash flows): its title two back,
                                                        # not further (Amcor's net debt table, pages after its balance sheet)
         if last and not title_match(page_text[p]) \
-                and not re.search(r"notes to|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
+                and not re.search(r"notes to\b|report of independent|discussion and analysis|statements? of|balance sheets?|quarterly|selected financial",
                                   _head(page_text[p]), re.I) and not re.search(r"statements? of|balance sheets?(?! change)", _bare(page_text[p]).rstrip()[-300:], re.I):
             prev = src[last[-1].start():]
             row = re.search(r"\(?\$?\s?\d{1,3}(,\d{3})+", prev)           # the header ends where the first amount is
@@ -1166,6 +1180,16 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             groups[g] = [f for f in fs if f.get("y") is None or len(rows[round(f["y"])]) >= 2 or abs(f["y"] - main) < 4]
     note_col = {p: note_column(t) for p, t in page_text.items()}
     cols = {p: page_columns([f for f in facts if f["page"] == p], note_col[p]) for p in page_text}
+    # pages whose columns are each year's total and "of which, related parties": the cells' positions of each table
+    # (its rows with all of them), for the totals
+    related: dict[int, list] = {}
+    for (page, label), fs in groups.items():
+        if len(re.findall(r"\bof which,?\s+related\s+part", page_text.get(page, "")[:3000], re.I)) >= 2 and len(fs) >= 4 \
+                and all("x1" in f for f in fs) and max(f.get("y") or 0 for f in fs) - min(f.get("y") or 0 for f in fs) < 4:
+            xs = tuple(sorted(_right(f) for f in fs))
+            if all(b - a > 15 for a, b in zip(xs, xs[1:])) and not any(
+                    len(sl) == len(xs) and all(abs(a - b) <= 8 for a, b in zip(sl, xs)) for sl in related.get(page, [])):
+                related.setdefault(page, []).append(xs)
     found: dict[str, list] = {}
     for (page, label), fs in groups.items():
         key = match(label)
@@ -1221,6 +1245,13 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             nums = nums[n:]
         row = _drop_note_ref(_in_reading_order(f for f in fs if not f.get("inline")), ys, note_col.get(page, False))
         cells = None if wrapped or ifrs else by_position(row if key not in PER_SHARE else nums, cols.get(page, []), n)
+        if cells is None and n >= 2 and not wrapped and not ifrs and key not in PER_SHARE and related.get(page):
+            # each year's total and "of which, related parties" beside it (an Italian report's statements): the totals'
+            # columns of the table the row is in, as its rows with every cell filled place them
+            near = lambda sl: sum(1 for f in row if "x1" in f and min(abs(_right(f) - x) for x in sl) <= 12)
+            sl = max((sl for sl in related[page] if len(sl) == 2 * n), key=near, default=None)
+            if sl and near(sl):
+                cells = by_position(row, list(sl[0::2]), n)
         if cells is None and not n and not ifrs and len(row) == 1 and len(cols.get(page, [])) == 2 and key not in PER_SHARE:
             cells = by_position(row, cols[page], 2)    # years not readable as text (Ørsted's, in a font of its own): the one
                                                        # figure of the row under the comparative column, the current one a dash
@@ -1240,7 +1271,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         if _toc(t):
             return 0                                           # a table of contents ("Statement of Financial Position …… 18")
         head = t[:700].lower() + " " + t[max(0, m.start() - 60):m.end()].lower()    # "Consolidated" before a title lower down
-        if re.search(NOT_PRIMARY, t[:700] + " " + m.group(), re.I):     # as printed: "Elkem ASA" is a legal entity
+        if not_primary(t[:700] + " " + m.group()):     # as printed: "Elkem ASA" is a legal entity
             return 1
         if len(re.findall(r"\d{1,3}(?:,\d{3}){2,}\.\d\d\b", t)) >= 5:
             return 1                       # amounts to the cent ("32,298,207.32"): a company's statutory accounts, not the group's
@@ -1250,12 +1281,12 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         # "Group income statement", "Statement of financial position of the Group": the group's, as "consolidated"
         i = whole.find(m.group())                  # the page before the cut: "Consolidated " right before "cash flow statement"
         before = whole[max(0, i - 60):i].lower() if i > 0 else ""
-        if re.search(NOT_PRIMARY, before, re.I):
+        if not_primary(before):
             return 1                       # "Financial statements of the parent company" over a title the page is cut at
         return 3 if "consolidat" in head or "consolidat" in before or re.search(r"\bgroup\b", t[max(0, m.start() - 40):m.end() + 40], re.I) else 2
     titled = {p: title_score(t, raw[p]) for p, t in page_text.items()}
     for p, b in carried.items():
-        if titled[p] >= 2 and re.search(NOT_PRIMARY, b, re.I):
+        if titled[p] >= 2 and not_primary(b):
             titled[p] = 1                              # carries on the parent company's statement of the page before
         if titled[p] == 2 and "consolidat" in b:
             titled[p] = 3                              # carries on the consolidated statement of the page before (Arctic Paper)
@@ -1289,7 +1320,10 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
     # the document's own statements: those of its latest year (not an investee's older ones printed after them), in
     # full rather than condensed (a 10-K's quarterly restatements)
     year_of = {p: max(header_years(t) or [0]) for p, t in page_text.items()}
-    top_year = max((year_of[p] for p in page_text if titled[p] >= 2 and kinds[p]), default=0)
+    # (pages with lines of it read: not a section of the review titled "Balance sheet and financial position", whose
+    # "2024/25" names no column)
+    top_year = max((year_of[p] for p in page_text if titled[p] >= 2 and kinds[p] and page_hits.get(p, 0) >= 2), default=0) \
+        or max((year_of[p] for p in page_text if titled[p] >= 2 and kinds[p]), default=0)
 
     def one_year(p: int) -> int:     # the one year a column header names: "(€, in millions, except per share data) Notes 2020"
         m = re.search(r"\b(millions|thousands)\b[^0-9]{0,60}\b(20\d\d)\b(?![\s,.]*\d)", page_text[p][:2500])
@@ -1342,7 +1376,8 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
             cands = [c for c in cands if statement_of(key) in kinds[c[0]] and titled.get(c[0], 0) >= 2]
             # with the group's consolidated statement at hand, not one titled without "consolidated": the parent
             # company's own statements, which European reports print after the group's ("Statement of Financial Position")
-            if any(statement_of(key) in kinds[p] and titled[p] == 3 for p in page_text if not (ocr_off and p in ocr)):
+            # (one with lines read on it: not a page that only names the consolidated statements, Netcompany's contents)
+            if any(statement_of(key) in kinds[p] and titled[p] == 3 and page_hits.get(p, 0) >= 2 for p in page_text if not (ocr_off and p in ocr)):
                 cands = [c for c in cands if titled[c[0]] == 3]
             if any(year_of[p] >= top_year and statement_of(key) in kinds[p] and titled[p] >= 2 for p in page_text if not (ocr_off and p in ocr)):
                 cands = [c for c in cands if not 0 < year_of[c[0]] < top_year]  # not an investee's older statements
@@ -1356,7 +1391,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         else:
             # no statement titled as such: not from the parent company's statements either (AKVA, whose group
             # statements did not print as text): a line not read rather than the parent's figure as the group's
-            cands = [c for c in cands if not re.search(NOT_PRIMARY, raw[c[0]][:900], re.I)]
+            cands = [c for c in cands if not not_primary(raw[c[0]][:900])]
             if any(titled[p] >= 2 for p in page_text):
                 # other statements found, not this one: a page that looks like it, not any table with the line (Elkem's
                 # net income from a table of its equity-accounted investments)
@@ -1407,7 +1442,7 @@ def extract(facts: list[dict], page_text: dict[int, str], before: Optional[dict]
         # elsewhere a dash read there can be another line's (Foot Locker's FX effect, a Swedish MD&A table)
         nil = key in ("dividends", "buybacks") and dashed and cur_f is not None and prev_f is None and max(ys) - 1 in ys and nums[ys.index(max(ys) - 1)] is None
         # no payment this year, the year before's in its own column ("Dividends paid — (2,111)", Boeing's 2021)
-        cur_nil = cur_f is None and prev_f is not None and key in ("dividends", "buybacks") and (dashed or bool(cells and any(cells)))
+        cur_nil = cur_f is None and prev_f is not None and key in ("dividends", "buybacks", "capex") and (dashed or bool(cells and any(cells)))
         if cur_f is None and not cur_nil:
             continue                                   # nothing in the current column ("—")
         # earnings per share printed in cents or pence ("Diluted loss per share (€ cents) (59.1)"): a hundredth

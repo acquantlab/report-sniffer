@@ -34,7 +34,7 @@ KEYWORDS = {
     # weight 1
     "totale": 1, "total": 1, "anno": 1, "year": 1, "periodo": 1, "period": 1, "netto": 1, "net": 1, "lordo": 1, "gross": 1,
 }
-NUM_RE = re.compile(r"^[(\-−–+]?(?:[€$£¥]|EUR|USD)?\s?\d[\d.,'’ ]*%?\)?$")
+NUM_RE = re.compile(r"^[(\-−–+]?(?:[€$£¥]|EUR|USD)?\s?\d[\d.,'’ ]*(%|(?<=\.\d)p)?\)?$")    # or pence: "103.1p" (RELX's EPS)
 INLINE_NUM = re.compile(r"(?<![\w.,])[(\-−–+]?(?:[€$£¥]\s?)?\d{1,3}(?:[.,'’ ]\d{3})+(?![\d])(?:[.,]\d+)?%?\)?|(?<![\w.,])[(\-−–+]?(?:[€$£¥]\s?)?\d+(?:[.,]\d+)?%?\)?")
 MONTH_END = re.compile(r"(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec"
                        r"|gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\.?\s*$", re.I)
@@ -47,6 +47,9 @@ def parse_loose(t: str, sep: Optional[str] = None) -> Optional[float]:
     """A printed amount as a number; sep, the document's thousands separator when known, settles "5.045" and "5,045"."""
     s = t.strip().replace("−", "-").replace("–", "-").replace("’", "").replace("'", "").replace(" ", "").replace(" ", "")
     neg = s.startswith("(") or s.startswith("-")         # "(2,597)", also when the PDF splits off the ")"
+    if re.fullmatch(r"\(?-?\d+\.\d+p\)?", s):
+        v = float(re.sub(r"[^\d.]", "", s)) / 100         # pence: "103.1p" is £1.031
+        return -v if neg else v
     s = re.sub(r"[^\d.,]", "", s)
     if not s or not any(c.isdigit() for c in s):
         return None
@@ -408,9 +411,13 @@ def join_groups(words: list[dict]) -> list[dict]:
             h = max(a["h"], wd["h"])
             joined = None
             # (or after a comma, a space the PDF put in: "–3, 125", a Luxembourg report's finance costs)
-            if same_line and (-1.5 <= gap <= 0.12 * h or (gap <= 0.42 * h and re.search(r"\d,$", a["t"]) and re.fullmatch(r"\d{3}(\.\d+)?\)?", wd["t"]))) and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
+            # (a piece that starts at a comma, or a short one after another, a hair further: "–1" "1" ",807" for –11,807, a
+            # Luxembourg report's prior-year profit, 0.13 of the height apart)
+            short = re.fullmatch(r"[(\-−–]?\d{1,2}", a["t"]) and re.fullmatch(r"\d{1,2}", wd["t"])
+            if same_line and (-1.5 <= gap <= 0.12 * h or (gap <= 0.2 * h and (short or re.match(r"[,.]\d{3}", wd["t"])))
+                              or (gap <= 0.42 * h and re.search(r"\d,$", a["t"]) and re.fullmatch(r"\d{3}(\.\d+)?\)?", wd["t"]))) and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
                     and AMOUNT.fullmatch(a["t"] + wd["t"]) and (_open(a["t"]) or re.match(r"[,.]", wd["t"]) or wd["t"].count(")") > wd["t"].count("(")
-                                                                 or (re.fullmatch(r"-?\d{1,2}", a["t"]) and re.fullmatch(r"\d{1,2}", wd["t"]))):
+                                                                 or short):
                 # (or two short whole numbers that touch: "1" "12", a profit of 112 its PDF set in two pieces, Sampo)
                 joined = a["t"] + wd["t"]                 # one amount the PDF breaks into touching pieces ("23,4" "79")
             # (a bold total's space is wider: "81 449", 0.36 of its height, Danish ESEF; columns lie ten times further)
@@ -574,7 +581,9 @@ WRAPS = re.compile(r"\b(of|and|to|for|in|on|from|before|by|with|at|the|or|net|le
 def _in_text(ln: list[dict], k: int) -> bool:
     """The number at position k of a line sits in a sentence ("net of $53, $123 and $48, respectively"), not a column."""
     t = ln[k]["t"]
-    nxt = ln[k + 1]["t"] if k + 1 < len(ln) else ""
+    # the next word of the sentence, not one far off at the page's edge (RELX's section tabs, "ion" "hie" printed down it)
+    near = k + 1 < len(ln) and ln[k + 1]["x"] - (ln[k]["x"] + ln[k]["w"]) < 2 * max(ln[k]["h"], 1)
+    nxt = ln[k + 1]["t"] if near else ""
     prv = ln[k - 1]["t"] if k > 0 else ""
     return bool(re.search(r"[,;]$", t) or nxt[:1].islower() or re.fullmatch(r"(19|20)\d\d[,:;]?", prv))
 
@@ -588,8 +597,8 @@ def _section_total(lines: list[list[dict]], li: int) -> str:
         # amounts in columns: not footnote marks, not numbers inside a wrapped label ("included $7,709 and $8,265 at …")
         return [w for k, w in enumerate(ln) if is_figure(w["t"]) and not re.fullmatch(r"\(\d\)", w["t"]) and not _in_text(ln, k)]
 
-    def text(ln):
-        return re.sub(r"\s+", " ", " ".join(w["t"] for w in ln if not is_figure(w["t"]))).strip(" :")
+    def text(ln):                                      # (without the currency signs before its amounts: "Total assets $ … $ …")
+        return re.sub(r"\s+", " ", " ".join(w["t"] for w in ln if not is_figure(w["t"]) and w["t"] not in ("$", "€", "£"))).strip(" :")
 
     if len(figs(lines[li])) < 2 or not figs(lines[li - 1]) or not text(lines[li - 1]):
         return ""                                       # under a label line: a row wrapped onto two lines
