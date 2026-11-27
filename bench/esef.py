@@ -84,6 +84,7 @@ def truth(f: dict) -> dict:
     facts = json.loads(_get(f["json"], DIR / (f["doc"] + ".json")))["facts"].values()
     end = date.fromisoformat(f["end"])
     by = defaultdict(list)
+    ext = defaultdict(set)                                 # concepts a company defined (its extension taxonomy)
     for x in facts:
         dims = x.get("dimensions", {})
         if set(dims) - {"concept", "entity", "period", "unit", "language"} or x.get("value") in (None, ""):
@@ -93,6 +94,7 @@ def truth(f: dict) -> dict:
         except ValueError:
             continue
         by[dims["concept"].split(":")[-1]].append((dims.get("period", ""), v))
+        ext[dims["concept"].split(":")[-1]] |= {dims["concept"].split(":")[0] not in ("ifrs-full", "us-gaap")}
     years = [e for e in (_day(p.split("/")[1]) for vs in by.values() for p, _ in vs if "/" in p
                          and 340 <= (_day(p.split("/")[1]) - _day(p.split("/")[0])).days <= 380)]
     top = max(set(years), key=years.count) if years else end
@@ -119,9 +121,28 @@ def truth(f: dict) -> dict:
                 w = "cur" if abs((e - end).days) <= 7 else "prev" if 350 <= (end - e).days <= 380 else None
                 if w:
                     vals[w][c].append(v)
-        if any(vals.values()):
+        # the report's own tag of the line, off: a period of a day or a month (an Italian report's dividends "2022-12-31/
+        # 2023-01-01"), or a concept the company defined under the IFRS one ("…ProfitLossFromOperatingActivitiesAfterShare
+        # OfProfitLoss…", a Belgian report's operating income): the figure read is the tagged one, the tag is not the measure
+        off = {"cur": [], "prev": []}
+        names = A.concepts(F, key)
+        for c, pv in by.items():
+            mine = c not in names and True in ext[c] and any(c.startswith(n) for n in names)
+            if c not in names and not mine:
+                continue
+            for per, v in pv:
+                if spec[2] == "stock" or "/" not in per:
+                    continue
+                s, e = (_day(p) for p in per.split("/"))
+                if not mine and 340 <= (e - s).days <= 381:
+                    continue
+                w = "cur" if -358 < (e - end).days <= 7 else "prev" if -731 < (e - end).days <= -358 else None
+                if w and (mine and 340 <= (e - s).days <= 381 or not mine):
+                    off[w].append(v)
+        if any(vals.values()) or any(off.values()):
             gt[key] = {w: {c: sorted(set(v)) for c, v in vals[w].items()} for w in ("cur", "prev")}
             gt[key]["alt"] = {"cur": {}, "prev": {}}
+            gt[key]["off"] = off
     return gt
 
 
@@ -169,6 +190,9 @@ def run(f: dict) -> dict:
                                                        # change in cash (Antares Vision tags its operating cash flow negative)
             if st == "wrong" and str(((r["periods"] or {}).get("flow") or [""])[0]).startswith("Q") and S.statement_of(key) != "bs":
                 st = "explained"                       # the app names the columns a quarter (DFDS's Q4 report): not the year's
+            if st == "wrong" and A.judge(key, o, {"tag": ((gt.get(key) or {}).get("off") or {}).get(w, [])}) == "ok":
+                st = "explained"                       # equal to the report's own tag of that line, on a malformed period
+                                                       # or under a concept of its own
             if st == "none":
                 if not cands:
                     continue

@@ -409,7 +409,9 @@ def join_groups(words: list[dict]) -> list[dict]:
             joined = None
             # (or after a comma, a space the PDF put in: "–3, 125", a Luxembourg report's finance costs)
             if same_line and (-1.5 <= gap <= 0.12 * h or (gap <= 0.42 * h and re.search(r"\d,$", a["t"]) and re.fullmatch(r"\d{3}(\.\d+)?\)?", wd["t"]))) and re.fullmatch(r"[(\-−–€$£\d][\d,.]*", a["t"]) and re.fullmatch(r"[\d,.][\d,.]*\)?%?", wd["t"]) \
-                    and AMOUNT.fullmatch(a["t"] + wd["t"]) and (_open(a["t"]) or re.match(r"[,.]", wd["t"]) or wd["t"].count(")") > wd["t"].count("(")):
+                    and AMOUNT.fullmatch(a["t"] + wd["t"]) and (_open(a["t"]) or re.match(r"[,.]", wd["t"]) or wd["t"].count(")") > wd["t"].count("(")
+                                                                 or (re.fullmatch(r"-?\d{1,2}", a["t"]) and re.fullmatch(r"\d{1,2}", wd["t"]))):
+                # (or two short whole numbers that touch: "1" "12", a profit of 112 its PDF set in two pieces, Sampo)
                 joined = a["t"] + wd["t"]                 # one amount the PDF breaks into touching pieces ("23,4" "79")
             # (a bold total's space is wider: "81 449", 0.36 of its height, Danish ESEF; columns lie ten times further)
             elif same_line and -1 <= gap <= 0.42 * h and re.fullmatch(r"[(\-−–]?[€$£]?\d{1,3}( \d{3})*", a["t"]) \
@@ -492,6 +494,8 @@ def _label_figures(words: list[dict], sep: Optional[str] = None) -> list[dict]:
                 continue
             if len(amount_x) >= 2 and re.fullmatch(r"\d{1,2}", wd["t"]) and wd["x"] < min(amount_x) and not in_column(wd):
                 continue
+            if len(ln) == 1 and re.fullmatch(r"\d{1,3}", wd["t"]) and li in (0, len(lines) - 1):
+                continue                                  # the page number, alone on the page's first or last line
             prev_w = ln[k - 1]["t"] if k > 0 else ""
             if re.fullmatch(r"\d{1,2},?", wd["t"]) and MONTH_END.search(prev_w):
                 continue                                  # "June 30": a date, not a figure
@@ -521,8 +525,13 @@ def _label_figures(words: list[dict], sep: Optional[str] = None) -> list[dict]:
                     break
             label_words = [w["t"] for w in ln[start:k] if not is_figure(w["t"]) and not re.fullmatch(r"[\W\d]+", w["t"])][-24:]
             label = unsplit(" ".join(label_words))
+            nxt = lines[li + 1] if li + 1 < len(lines) else []
+            if not label and nxt and 0 < nxt[0]["y"] - wd["y"] < 0.8 * wd["h"] and not any(is_figure(w["t"]) for w in nxt):
+                # a row set a hair above its label (Bank of Cyprus' "114.0 109.0" / "Diluted profit per share …"): that label
+                label = unsplit(" ".join(w["t"] for w in nxt if w["x"] < wd["x"] and not re.fullmatch(r"[\W\d]+", w["t"]))[-200:])
             if not label and li > 0:
-                label = _section_total(lines, li) or " ".join(w["t"] for w in lines[li - 1] if not is_figure(w["t"]))[:80]
+                # (the words of that line left of the figure: not the other half of a page printed two up, Swedish report)
+                label = _section_total(lines, li) or " ".join(w["t"] for w in lines[li - 1] if not is_figure(w["t"]) and w["x"] < wd["x"])[:80]
             elif li > 0 and (label[:1].islower() or WRAPS.search(" ".join(w["t"] for w in lines[li - 1]))) \
                     and not any(is_figure(w["t"]) and not _in_text(lines[li - 1], j) for j, w in enumerate(lines[li - 1])):
                 # a row label wrapped onto two lines: "Effect of exchange" / "rate fluctuations on cash … (6)",

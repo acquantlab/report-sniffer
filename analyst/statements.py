@@ -39,7 +39,7 @@ PATTERNS: dict[str, list[str]] = {
     "gross_profit": [r"gross (profit|margin|income)", r"(margine|utile) lordo"],
     "rnd": [r"research,? (and )?development( expenses?| costs?)?", r"(costi|spese) (di|per) ricerca e sviluppo"],
     "operating_income": [r"operating (income|profit|loss)( \(loss\))?( from continuing operations| \(ebit\))?", r"operating \(loss\) income", _RES + r" from operations",
-                         r"(ebit|operating result)( before impairments?)?",
+                         r"(ebit|operating result)( before impairments?( and provisions)?)?",
                          r"risultato operativo", r"utile operativo", r"reddito operativo"],
     "pretax_income": [r"pre-?tax (income|earnings|profit|loss)( \(loss\))?( from continuing operations)?", _RESULT + r"( from continuing operations)? before (the )?(equity (income|loss|earnings|\(loss\) income|income \(loss\)) and )?(\(?(provision|benefit)\)?( (for|from)\)?)? )*(income )?tax(es)?( on income)?"
                       r"( (expense|provision|benefit|\((expense|provision|benefit)\)))*( and .*)?",

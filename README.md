@@ -159,12 +159,12 @@ assets and liabilities, equity, operating/investing/financing cash flows, capex 
 year — with the value the company filed in XBRL with the SEC for the same period in the same 10-K
 ([data.sec.gov companyfacts](https://www.sec.gov/search-filings/edgar-application-programming-interfaces)).
 
-| On the 269 10-K PDFs | v2.1.0 | v2.2.41 |
+| On the 269 10-K PDFs | v2.1.0 | v2.2.42 |
 |---|---|---|
 | Figures read that equal the filed value | 93.8% (627 wrong) | **100%** (11,846 of 11,846) |
 | Main lines (16 lines × 2 years) found, of those the statements print | 78.8% | **100%** (8,214 of 8,214) |
 
-| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.41 |
+| On the 56 quarterly reports (10-Q) and earnings releases | v2.1.0 | v2.2.42 |
 |---|---|---|
 | Figures read that equal the filed value | 97.5% (41 wrong) | **100%** (1,957 of 1,957) |
 | Main lines found, of those the statements print | 82.2% | **100%** (1,353 of 1,353) |
@@ -202,13 +202,14 @@ rather than the parent company's, a subsidiary's, a reclassified or a proportion
 to an untitled page; a dash for a dividend not paid.
 **On reports the rules were not fitted to** the numbers are lower, and they are the honest measure of what an unseen
 layout gives. On 37 ESEF reports for 2022 (other companies, other layouts) v2.2.31 read 82% of the figures right
-and found 77% of the lines; fixed from what they showed, 94% (671 of 712) and 90%, and 99.8% (882 of 884) with 97% found now. A further 33 reports for
+and found 77% of the lines; fixed from what they showed, 94% (671 of 712) and 90%, and 100% (882 of 882) with 97% found now. A further 33 reports for
 2021, measured only after that: 81% right at first (145 wrong), the fairest number for a layout never seen; fixed
-from what they showed too, 99% now (810 of 817) with 96% of lines found; 20 reports for 2020, 99.7% (308 of 309), 95% found.
+from what they showed too, 100% now (812 of 812) with 97% of lines found; 20 reports for 2020, 100% (309 of 309), 95% found.
 **The latest unseen set**, 30 reports for 2024 (23 companies never measured), first read by v2.2.40: 82% right
 (425 of 518 on the 25 then printed) and 77% of lines found; fixed from what they showed (units as "(Euro/million)", note
-numbers as "2.1.", a parent company's or a bank's statements, adjusted figures, a translation into US dollars), 99.8%
-(630 of 631) with 93% found. Lines after a note number ("3 Revenue") count as printed, so as missed when not read. Some of what is left is the benchmark's own (prints that cut amounts short or lost a column:
+numbers as "2.1.", a parent company's or a bank's statements, adjusted figures, a translation into US dollars), 100%
+(632 of 632) with 93% found. Lines after a note number ("3 Revenue") count as printed, so as missed when not read. Twenty-four figures (of 3,388) equal the report's own tag of the line where that tag is off, and count as explained, not right: a period of a day or a month (an Italian report tags its cash-flow dividends "31 December–1 January"), a concept the company defined under the IFRS one, an EPS tagged at a hundredth, a sign the other way; or a fourth-quarter report whose columns the
+app names as the quarter (DFDS). Of the lines not found, some are the benchmark's own (prints that cut amounts short or lost a column:
 ASML 2022); the rest are layouts not seen yet. Figures the statements contradict (total assets ≠ total equity and
 liabilities, a part larger than its total) are dropped rather than shown.
 (An ESEF report searched in the app is read from its tags, not by these rules.)
@@ -424,8 +425,8 @@ notes are sent to the provider you chose (or to its command-line tool), under th
   or skewed page; the page of every figure is shown so it can
   be checked. On 269 real 10-K PDFs and 56 quarterly reports and releases (also read as scans) every figure read
   equals the value filed with the SEC (see [Accuracy](#accuracy)); on 32 European reports in PDF every
-  figure read equals the report's own tag, 729 of 729, 2 printed lines not found; on 30 reports for 2024 not
-  seen before, 630 of 631.
+  figure read equals the report's own tag, 729 of 729, 2 printed lines not found; on 152 European reports of
+  2020–2024, 3,364 of 3,364.
 - Free cash flow uses capex on property, plant and equipment; some companies also include intangibles.
 - The PDF report does not print scripts written right to left or with joined letters (Arabic, Hebrew, Devanagari,
   Thai). Chinese, Japanese and Korean are printed in a single weight (no bold).
